@@ -13,6 +13,7 @@
 - **页面缩放**：80%–180%，自动保存；正文字号、行距、横向翻页及背景使用微信读书自身设置，建议选择白底黑字。
 - **上一屏 / 下一屏**：优先点击已识别的网页翻页按钮；连续滚动模式下每次移动一屏并保留约 100 CSS 像素重叠。输入框编辑时不触发。
 - **全屏**：使用 macOS 原生全屏。
+- **应用界面黑白适配**：原生工具栏和页边距、行距面板统一使用白底黑字、实线边框和无渐变按钮。按钮采用 22 点半粗体，当前设置值 30 点，说明文字 20 点；墨水模式的勾选与加粗边框、键盘焦点及按下状态均可用黑白区分。工具栏保持一行，窄窗口使用清晰的黑白横向滚动条；此适配始终生效。
 - **大字状态栏**：底部状态提示采用 22 点中等粗细黑字、56 点高白色状态栏，并放大加载指示器，便于在墨水屏上查看加载和排版进度。
 - **侧边栏大控件**：侧栏各入口扩大至 64 × 64 CSS 像素；目录、笔记、字体和通用阅读弹层采用更宽的面板及 20 CSS 像素文字。字体选项加高，内容较多时可以滚动。此适配独立于墨水模式，并随页面缩放进一步放大。
 - **清晰字号设置**：字体面板顶部固定显示当前字号档位，采用大号数字及带黑色边框的原生字号滑块；点击或拖动后与正文字号同步更新，滚动字体列表时仍可见。档位沿用微信读书原有设置，不将其误标为字体磅值。
@@ -35,6 +36,7 @@ bash build.sh
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --self-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --selection-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ai-test
+"build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ui-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --smoke-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --reader-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --layout-test
@@ -79,3 +81,5 @@ bash scripts/package.sh
 `--ai-test` 使用官网 AI 面板及聊天 iframe 结构的离线页面，验证父页面和子页面样式注入、问答与引用字号、黑白边框、滚动和输入区布局、推荐问题点击，以及墨水模式开关同步。GitHub Actions 同时运行；不向 AI 服务发送问题，不验证登录后的实际问答。
 
 0.1.10 修复 AI 问书提交后聊天空白：白色背景仅应用到明确的聊天区域，保留官网全屏 Toast 提示容器的透明背景，避免遮住已生成的提问和回答。离线自检加入该提示层，防止再次出现遮挡。
+
+0.1.11 增加应用原生界面的墨水屏适配，并修正设置面板放大后的边缘裁切。`--ui-test` 在离线页面中操作真实原生按钮，验证页边距、行距、恢复默认、工具栏滚动和墨水模式状态，检查加减按钮不会被面板裁切，并保存工具栏与面板截图。自检不写入阅读设置或窗口尺寸。

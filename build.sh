@@ -5,7 +5,7 @@ APP="$ROOT/build/墨读 Paperlike.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -arch x86_64 -fobjc-arc -Wall -Wextra -Werror -mmacosx-version-min=12.0 \
   -framework Cocoa -framework WebKit -framework CoreGraphics \
-  "$ROOT/Sources/main.m" -o "$APP/Contents/MacOS/PaperlikeReader"
+  "$ROOT/Sources/main.m" "$ROOT/Sources/InkControls.m" -o "$APP/Contents/MacOS/PaperlikeReader"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/ink.js" "$APP/Contents/Resources/ink.js"
 cp "$ROOT/Resources/ai.js" "$APP/Contents/Resources/ai.js"

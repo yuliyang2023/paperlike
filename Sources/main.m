@@ -1,8 +1,15 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import "InkControls.h"
 
 static NSString * const HomeURL = @"https://weread.qq.com/";
+
+static NSButton *ButtonForAction(NSView *view, SEL action) {
+    if ([view isKindOfClass:NSButton.class] && ((NSButton *)view).action == action) return (NSButton *)view;
+    for (NSView *child in view.subviews) { NSButton *button = ButtonForAction(child, action); if (button) return button; }
+    return nil;
+}
 
 @interface ReaderApp : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @property NSWindow *window;
@@ -20,6 +27,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 @property NSTextField *layoutValue;
 @property NSString *layoutKind;
 @property BOOL selfTest;
+@property BOOL uiTest;
+@property NSScrollView *toolbarScroll;
 @property BOOL selectionTest;
 @property BOOL selectionNarrowTest;
 @property BOOL aiTest;
@@ -51,10 +60,14 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 
 @implementation ReaderApp
 - (NSButton *)button:(NSString *)title action:(SEL)action tooltip:(NSString *)tooltip {
-    NSButton *button = [NSButton buttonWithTitle:title target:self action:action];
+    InkButton *button = [[InkButton alloc] initWithFrame:NSZeroRect];
+    button.cell = [[InkButtonCell alloc] initTextCell:title];
+    button.title = title; button.target = self; button.action = action;
+    button.buttonType = NSButtonTypeMomentaryPushIn;
+    button.focusRingType = NSFocusRingTypeNone;
     button.bezelStyle = NSBezelStyleRegularSquare;
     button.controlSize = NSControlSizeLarge;
-    button.font = [NSFont systemFontOfSize:20 weight:NSFontWeightMedium];
+    button.font = [NSFont systemFontOfSize:22 weight:NSFontWeightSemibold];
     CGFloat titleWidth = [title sizeWithAttributes:@{NSFontAttributeName: button.font}].width;
     [NSLayoutConstraint activateConstraints:@[
         [button.heightAnchor constraintEqualToConstant:56],
@@ -104,7 +117,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     (void)notification;
     self.selectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
     self.aiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ai-test"];
-    self.selfTest = self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    self.uiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test"];
+    self.selfTest = self.uiTest || self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
     self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
@@ -129,7 +143,9 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     self.window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
     self.window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     [self.window center];
-    [self.window setFrameAutosaveName:@"ReaderWindow"];
+    if (!self.selfTest && !self.smokeTest) [self.window setFrameAutosaveName:@"ReaderWindow"];
+    self.window.backgroundColor = NSColor.whiteColor;
+    self.window.titlebarAppearsTransparent = YES;
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     [config.userContentController addScriptMessageHandler:self name:@"paperlikeStatus"];
@@ -175,13 +191,20 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSSize toolbarSize = toolbar.fittingSize;
     toolbar.frame = NSMakeRect(0, 0, ceil(toolbarSize.width), 80);
     NSScrollView *toolbarScroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    self.toolbarScroll = toolbarScroll;
     toolbarScroll.documentView = toolbar;
     toolbarScroll.hasHorizontalScroller = YES;
     toolbarScroll.hasVerticalScroller = NO;
-    toolbarScroll.autohidesScrollers = YES;
-    toolbarScroll.scrollerStyle = NSScrollerStyleOverlay;
+    toolbarScroll.autohidesScrollers = NO;
+    toolbarScroll.scrollerStyle = NSScrollerStyleLegacy;
+    toolbarScroll.horizontalScroller = [[InkScroller alloc] initWithFrame:NSZeroRect];
     toolbarScroll.drawsBackground = YES;
-    toolbarScroll.backgroundColor = NSColor.windowBackgroundColor;
+    toolbarScroll.backgroundColor = NSColor.whiteColor;
+    toolbar.wantsLayer = YES;
+    toolbar.layer.backgroundColor = NSColor.whiteColor.CGColor;
+    toolbarScroll.wantsLayer = YES;
+    toolbarScroll.layer.borderColor = NSColor.blackColor.CGColor;
+    toolbarScroll.layer.borderWidth = 1;
     toolbarScroll.borderType = NSNoBorder;
 
     self.status = [NSTextField labelWithString:@"正在连接微信读书…"];
@@ -200,6 +223,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     footer.edgeInsets = NSEdgeInsetsMake(12, 16, 12, 16);
     footer.wantsLayer = YES;
     footer.layer.backgroundColor = NSColor.whiteColor.CGColor;
+    footer.layer.borderColor = NSColor.blackColor.CGColor;
+    footer.layer.borderWidth = 1;
     NSView *content = self.window.contentView;
     for (NSView *view in @[toolbarScroll, self.webView, footer]) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
@@ -209,7 +234,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         [toolbarScroll.topAnchor constraintEqualToAnchor:content.topAnchor],
         [toolbarScroll.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [toolbarScroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [toolbarScroll.heightAnchor constraintEqualToConstant:80],
+        [toolbarScroll.heightAnchor constraintEqualToConstant:100],
         [self.webView.topAnchor constraintEqualToAnchor:toolbarScroll.bottomAnchor],
         [self.webView.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [self.webView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
@@ -223,7 +248,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     ]];
     [self updateControls];
     if (self.selfTest) {
-        if (self.selectionTest || self.aiTest) {
+        if (self.selectionTest || self.aiTest || self.uiTest) {
             [self.window makeKeyAndOrderFront:nil];
             [NSApp activateIgnoringOtherApps:YES];
         }
@@ -243,6 +268,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 }
 - (void)updateControls {
     self.zoomLabel.title = [NSString stringWithFormat:@"%.0f%%", self.zoom * 100];
+    self.inkButton.state = self.ink ? NSControlStateValueOn : NSControlStateValueOff;
     self.inkButton.title = self.ink ? @"墨水模式 ✓" : @"墨水模式 关";
 }
 - (void)home:(id)sender { (void)sender; [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:HomeURL]]]; }
@@ -262,7 +288,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)setPageZoom:(double)value {
     self.zoom = fmin(1.8, fmax(0.8, value));
     self.webView.pageZoom = self.zoom;
-    [NSUserDefaults.standardUserDefaults setDouble:self.zoom forKey:@"zoom"];
+    if (!self.selfTest) [NSUserDefaults.standardUserDefaults setDouble:self.zoom forKey:@"zoom"];
     [self updateControls];
 }
 - (void)zoomIn:(id)sender { (void)sender; [self setPageZoom:self.zoom + 0.1]; }
@@ -290,29 +316,46 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         self.defaultLineSpacing = [result[@"defaultLineHeight"] doubleValue];
         BOOL margin = [kind isEqualToString:@"margin"];
         NSTextField *title = [NSTextField labelWithString:margin ? @"页边距" : @"正文行距"];
-        title.font = [NSFont systemFontOfSize:22 weight:NSFontWeightSemibold];
+        title.font = [NSFont systemFontOfSize:26 weight:NSFontWeightSemibold];
+        title.textColor = NSColor.blackColor;
         self.layoutValue = [NSTextField labelWithString:@"默认"];
-        self.layoutValue.font = [NSFont systemFontOfSize:24 weight:NSFontWeightSemibold];
+        self.layoutValue.font = [NSFont monospacedDigitSystemFontOfSize:30 weight:NSFontWeightSemibold];
+        self.layoutValue.textColor = NSColor.blackColor;
         self.layoutValue.alignment = NSTextAlignmentCenter;
-        [self.layoutValue.widthAnchor constraintEqualToConstant:156].active = YES;
+        [self.layoutValue.widthAnchor constraintEqualToConstant:224].active = YES;
         NSButton *minus = [self button:@"−" action:@selector(decreaseLayout:) tooltip:margin ? @"减少左右留白" : @"缩小行间距"];
         NSButton *plus = [self button:@"＋" action:@selector(increaseLayout:) tooltip:margin ? @"增加左右留白" : @"增大行间距"];
         NSStackView *row = [NSStackView stackViewWithViews:@[minus, self.layoutValue, plus]];
         row.spacing = 12;
         row.alignment = NSLayoutAttributeCenterY;
         NSTextField *hint = [NSTextField labelWithString:margin ? @"调整正文左右留白，每次 20 px" : @"每次调整 0.1 倍，数值越大越宽松"];
-        hint.font = [NSFont systemFontOfSize:15];
+        hint.font = [NSFont systemFontOfSize:20 weight:NSFontWeightMedium];
         hint.textColor = NSColor.blackColor;
         NSButton *reset = [self button:@"恢复默认" action:@selector(resetLayout:) tooltip:@"恢复微信读书原来的排版"];
         NSStackView *content = [NSStackView stackViewWithViews:@[title, row, hint, reset]];
         content.orientation = NSUserInterfaceLayoutOrientationVertical;
         content.alignment = NSLayoutAttributeCenterX;
         content.spacing = 12;
-        content.edgeInsets = NSEdgeInsetsMake(16, 16, 16, 16);
-        NSSize size = content.fittingSize;
-        content.frame = NSMakeRect(0, 0, size.width, size.height);
+        // Give the stack explicit padding in a wrapper. fittingSize alone does
+        // not include stack edge insets reliably on older AppKit versions.
+        NSSize stackSize = content.fittingSize;
+        NSSize size = NSMakeSize(ceil(stackSize.width) + 40, ceil(stackSize.height) + 40);
+        NSView *panel = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)];
+        panel.wantsLayer = YES;
+        panel.layer.backgroundColor = NSColor.whiteColor.CGColor;
+        panel.layer.borderColor = NSColor.blackColor.CGColor;
+        panel.layer.borderWidth = 2;
+        panel.layer.cornerRadius = 6;
+        content.translatesAutoresizingMaskIntoConstraints = NO;
+        [panel addSubview:content];
+        [NSLayoutConstraint activateConstraints:@[
+            [content.leadingAnchor constraintEqualToAnchor:panel.leadingAnchor constant:20],
+            [content.trailingAnchor constraintEqualToAnchor:panel.trailingAnchor constant:-20],
+            [content.topAnchor constraintEqualToAnchor:panel.topAnchor constant:20],
+            [content.bottomAnchor constraintEqualToAnchor:panel.bottomAnchor constant:-20]
+        ]];
         NSViewController *controller = [[NSViewController alloc] init];
-        controller.view = content;
+        controller.view = panel;
         self.layoutPopover = [[NSPopover alloc] init];
         self.layoutPopover.behavior = NSPopoverBehaviorTransient;
         self.layoutPopover.animates = NO;
@@ -334,8 +377,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         }
         self.pageMargin = [result[@"effectiveMargin"] doubleValue];
         self.lineSpacing = [result[@"lineHeight"] doubleValue];
-        [NSUserDefaults.standardUserDefaults setDouble:self.pageMargin forKey:@"pageMargin"];
-        [NSUserDefaults.standardUserDefaults setDouble:self.lineSpacing forKey:@"lineSpacing"];
+        if (!self.selfTest) [NSUserDefaults.standardUserDefaults setDouble:self.pageMargin forKey:@"pageMargin"];
+        if (!self.selfTest) [NSUserDefaults.standardUserDefaults setDouble:self.lineSpacing forKey:@"lineSpacing"];
         [self updateLayoutValue];
         // The footer may have remained visible throughout reflow, so ask for
         // current state after saving instead of leaving a one-way busy label.
@@ -361,7 +404,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)toggleInk:(id)sender {
     (void)sender;
     self.ink = !self.ink;
-    [NSUserDefaults.standardUserDefaults setBool:self.ink forKey:@"ink"];
+    if (!self.selfTest) [NSUserDefaults.standardUserDefaults setBool:self.ink forKey:@"ink"];
     NSString *js = [NSString stringWithFormat:@"window.PaperlikeReader && window.PaperlikeReader.setInk(%@)", self.ink ? @"true" : @"false"];
     [self.webView evaluateJavaScript:js completionHandler:nil];
     [self updateControls];
@@ -480,6 +523,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSString *layoutJS = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", self.pageMargin, self.lineSpacing];
     [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
+    if (self.uiTest) { [self checkNativeUITest:0]; return; }
     if (self.aiTest) { [self checkAITest:0]; return; }
     if (self.selectionTest) { [self checkSelectionTest:0]; return; }
     if (self.selfTest) [self runSelfTest];
@@ -622,6 +666,72 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
             exit(passed ? 0 : 8);
         }];
     }];
+}
+- (void)writeNativeSnapshot:(NSView *)view name:(NSString *)name {
+    [view layoutSubtreeIfNeeded]; [view displayIfNeeded];
+    NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+    [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:name];
+    [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+    fprintf(stdout, "Snapshot: %s\n", path.UTF8String); fflush(stdout);
+}
+- (void)checkNativeUITest:(NSUInteger)stage {
+    NSView *panel = self.layoutPopover.contentViewController.view;
+    BOOL passed = YES;
+    if (stage == 0) {
+        // Offline bridge exercises native button actions without changing books or saved settings.
+        NSString *stub = @"window.PaperlikeNativeTestState={reader:true,effectiveMargin:0,lineHeight:0,defaultLineHeight:1.5};window.PaperlikeReader.layoutState=()=>PaperlikeNativeTestState;window.PaperlikeReader.setLayout=(margin,line)=>Object.assign(PaperlikeNativeTestState,{applied:true,effectiveMargin:margin,lineHeight:line});true";
+        [self.webView evaluateJavaScript:stub completionHandler:^(id result, NSError *error) {
+            (void)result; if (error) { fprintf(stderr, "NATIVE UI bridge FAIL\n"); exit(10); }
+            NSButton *button = ButtonForAction(self.toolbarScroll.documentView, @selector(showMargins:));
+            [self.toolbarScroll.documentView scrollRectToVisible:button.frame];
+            [button performClick:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkNativeUITest:1]; });
+        }];
+        return;
+    } else if (stage == 1 || stage == 4) {
+        passed = self.layoutPopover.shown && self.layoutValue.font.pointSize >= 30 &&
+            [self.layoutValue.textColor isEqual:NSColor.blackColor] && [self.layoutValue.stringValue isEqualToString:@"默认"];
+        NSButton *plus = ButtonForAction(panel, @selector(increaseLayout:));
+        NSButton *minus = ButtonForAction(panel, @selector(decreaseLayout:));
+        passed = passed && [plus.cell isKindOfClass:InkButtonCell.class] && plus.bounds.size.height >= 56 &&
+            NSContainsRect(NSInsetRect(panel.bounds, 3, 3), [plus convertRect:plus.bounds toView:panel]) &&
+            NSContainsRect(NSInsetRect(panel.bounds, 3, 3), [minus convertRect:minus.bounds toView:panel]);
+        if (stage == 1) {
+            [self writeNativeSnapshot:self.toolbarScroll.documentView name:@"paperlike-toolbar.png"];
+            [self writeNativeSnapshot:panel name:@"paperlike-margins.png"];
+        }
+        if (passed) [plus performClick:nil];
+    } else if (stage == 2) {
+        passed = fabs(self.pageMargin - 20) < 0.01 && [self.layoutValue.stringValue containsString:@"20"];
+        if (passed) [ButtonForAction(panel, @selector(resetLayout:)) performClick:nil];
+    } else if (stage == 3) {
+        passed = fabs(self.pageMargin) < 0.01 && [self.layoutValue.stringValue isEqualToString:@"默认"];
+        NSButton *button = ButtonForAction(self.toolbarScroll.documentView, @selector(showLineSpacing:));
+        [self.toolbarScroll.documentView scrollRectToVisible:button.frame];
+        if (passed) [button performClick:nil];
+    } else if (stage == 5) {
+        passed = fabs(self.lineSpacing - 1.6) < 0.01 && [self.layoutValue.stringValue containsString:@"1.6"];
+        [self writeNativeSnapshot:panel name:@"paperlike-line-spacing.png"];
+        if (passed) [ButtonForAction(panel, @selector(resetLayout:)) performClick:nil];
+    } else {
+        passed = self.lineSpacing == 0 && [self.layoutValue.stringValue isEqualToString:@"默认"];
+        [self.layoutPopover close];
+        NSButton *last = ButtonForAction(self.toolbarScroll.documentView, @selector(fullScreen:));
+        [self.toolbarScroll.documentView scrollRectToVisible:last.frame];
+        NSRect visible = self.toolbarScroll.contentView.bounds;
+        passed = passed && NSContainsRect(NSInsetRect(visible, -1, -1), last.frame);
+        BOOL previousInk = self.ink;
+        [self.inkButton performClick:nil];
+        passed = passed && self.ink != previousInk && self.inkButton.state == (self.ink ? NSControlStateValueOn : NSControlStateValueOff);
+        [self.inkButton performClick:nil];
+        passed = passed && self.ink == previousInk;
+        [self writeNativeSnapshot:self.toolbarScroll name:@"paperlike-toolbar-scroll.png"];
+        fprintf(stdout, "NATIVE UI %s · margin/line buttons, reset, toolbar scrolling, ink state\n", passed ? "PASS" : "FAIL"); fflush(stdout);
+        exit(passed ? 0 : 10);
+    }
+    if (!passed) { fprintf(stderr, "NATIVE UI FAIL at stage %lu\n", (unsigned long)stage); exit(10); }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkNativeUITest:stage + 1]; });
 }
 - (void)checkAITest:(NSUInteger)attempt {
     NSString *js = @"(() => {const frame=document.querySelector('.readerAIChatPanel_frame'),d=frame?.contentDocument;if(!d?.querySelector('.UserMessage_text__test')||!frame.contentWindow.PaperlikeAI)return {passed:false,frameReady:false};const cs=x=>getComputedStyle(x),fc=x=>frame.contentWindow.getComputedStyle(x);const input=document.querySelector('.readerAIChatPanel_footer_textarea'),send=document.querySelector('.readerAIChatPanel_footer_sendButton'),answer=d.querySelector('[class*=markdown-body]'),question=d.querySelector('[class*=UserMessage_text]'),reference=d.querySelector('[class*=UserMessage_reference]'),suggestion=d.querySelector('[class*=ChatSuggestion_question_item]'),scroll=d.querySelector('[class*=ChatSessions_container]');const panel=document.querySelector('.readerAIChatPanel').getBoundingClientRect(),ir=input.getBoundingClientRect(),fr=frame.getBoundingClientRect();const font=parseFloat(fc(answer).fontSize),inputFont=parseFloat(cs(input).fontSize),sendSize=send.getBoundingClientRect().width;const black=fc(answer).color==='rgb(0, 0, 0)'&&cs(input).color==='rgb(0, 0, 0)';const border=parseFloat(fc(suggestion).borderTopWidth)>=1.5;const overlay=d.querySelector('[class*=Toast_toast_container]');const overlayTransparent=!!overlay&&fc(overlay).backgroundColor==='rgba(0, 0, 0, 0)';const frameInk=d.documentElement.dataset.paperlikeAiInk==='true';const bounds=panel.left>=0&&panel.right<=innerWidth+1&&panel.top>=0&&panel.bottom<=innerHeight+1&&fr.height>80&&ir.top>=fr.bottom-2&&ir.bottom<=panel.bottom;scroll.scrollTop=scroll.scrollHeight;const scrollable=scroll.scrollHeight>scroll.clientHeight&&scroll.scrollTop>0;suggestion.click();const clicked=d.body.dataset.testClicked;return {passed:font>=20&&inputFont>=22&&sendSize>=55.9&&black&&border&&overlayTransparent&&frameInk&&bounds&&scrollable&&Number(clicked)>0,font,inputFont,sendSize,black,border,overlayTransparent,borderStyle:fc(suggestion).borderTopStyle,borderWidth:fc(suggestion).borderTopWidth,frameInk,bounds,scrollable,clicked,questionFont:parseFloat(fc(question).fontSize),referenceFont:parseFloat(fc(reference).fontSize)};})()";

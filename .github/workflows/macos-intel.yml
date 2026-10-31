@@ -27,11 +27,11 @@ jobs:
       - name: Build and verify Intel application
         run: bash build.sh
 
-      - name: Run offline WebKit self-test
+      - name: Run offline WebKit and native UI tests
         run: |
           python3 - <<'PY'
           import subprocess
-          for mode in ["--self-test", "--selection-test", "--ai-test"]:
+          for mode in ["--self-test", "--selection-test", "--ai-test", "--ui-test"]:
               subprocess.run(
                   ["build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader", mode],
                   timeout=60,
