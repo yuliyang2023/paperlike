@@ -59,7 +59,8 @@
       animation-duration: 0.001s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
       transition-duration: 0.001s !important; scroll-behavior: auto !important;
     }
-    html[data-paperlike-ai-ink="true"] :is([class*="container"], [class*="content"], [class*="UserMessage_background"],
+    /* Keep full-screen portal and toast containers transparent; they sit above the chat. */
+    html[data-paperlike-ai-ink="true"] :is([class*="multi-turn-stream_container__"], [class*="multi-turn-stream_content__"], [class*="UserMessage_background"],
         [class*="UserMessage_card"], [class*="ChatSuggestion_question_item"], [class*="FollowSuggestion_item"], [class*="ChatInputHelper_item"]) {
       background-color: white !important;
     }
