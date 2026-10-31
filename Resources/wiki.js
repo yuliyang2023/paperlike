@@ -6,7 +6,7 @@
   style.id = 'paperlike-wiki-style';
   style.textContent = `
     html { color-scheme: light !important; background: white !important; }
-    body { background: white !important; color: black !important; font-size: 22px !important; line-height: 1.85 !important; }
+    body { background: white !important; color: black !important; font-size: var(--paperlike-wiki-font, 28px) !important; line-height: 1.85 !important; }
     *, *::before, *::after {
       color: black !important; text-shadow: none !important; box-shadow: none !important;
       animation-duration: 0.001s !important; animation-delay: 0s !important;
@@ -15,23 +15,34 @@
     /* Only paint known page surfaces; transparent overlays must stay transparent. */
     :is(.mw-page-container, .mw-page-container-inner, .mw-body, .vector-header-container,
       .vector-header, .mw-content-container, .mw-parser-output, .mw-search-results) { background: white !important; }
-    .mw-page-container { max-width: 1400px !important; margin-inline: auto !important; padding: 20px 28px !important; }
-    .mw-page-container-inner { display: block !important; }
+    .mw-page-container { box-sizing: border-box !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 20px var(--paperlike-wiki-margin, 60px) !important; }
+    .mw-page-container-inner { display: block !important; padding: 0 !important; }
+    .mw-body { box-sizing: border-box !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
     .vector-column-start, .vector-column-end { display: none !important; }
-    .mw-content-container { max-width: 1040px !important; margin-inline: auto !important; width: auto !important; }
+    .mw-content-container { box-sizing: border-box !important; max-width: none !important; margin: 0 !important; width: 100% !important; }
     :is(.mw-body-content, .mw-parser-output, .searchresults, .mw-search-results, .searchresult) {
-      font-size: 22px !important; line-height: 1.85 !important; overflow-wrap: anywhere;
+      font-size: var(--paperlike-wiki-font, 28px) !important; line-height: 1.85 !important; overflow-wrap: anywhere;
     }
-    .mw-parser-output :is(p, li, dd, dt, blockquote), .searchresult { font-size: 22px !important; line-height: 1.85 !important; }
+    .mw-parser-output :is(p, li, dd, dt, blockquote), .searchresult { font-size: var(--paperlike-wiki-font, 28px) !important; line-height: 1.85 !important; }
+    #mw-content-text :is(p, li, dd, dt, blockquote, td, th, div, span, a, small) {
+      font-size: var(--paperlike-wiki-font, 28px) !important; line-height: 1.85 !important;
+    }
+    #mw-content-text .mw-search-result-heading, #mw-content-text .mw-search-result-heading * {
+      font-size: var(--paperlike-wiki-h3, 30px) !important; line-height: 1.6 !important;
+    }
+    #mw-content-text :is(h1, h2, h3, h4) * { font-size: inherit !important; line-height: inherit !important; }
+    #mw-content-text :is(.reference, .references, .reflist), #mw-content-text :is(.reference, .references, .reflist) * {
+      font-size: var(--paperlike-wiki-note, 24px) !important; line-height: 1.7 !important;
+    }
     :is(.vector-header, .vector-page-toolbar, .vector-dropdown-content) a {
       font-size: 20px !important; line-height: 1.6 !important;
     }
     .vector-header { flex-wrap: wrap !important; gap: 12px; }
     :is(.vector-dropdown-content, .cdx-menu) { background: white !important; border: 2px solid black !important; max-height: 75vh; overflow-y: auto; }
-    h1, .firstHeading { font-size: 32px !important; line-height: 1.5 !important; }
-    h2 { font-size: 28px !important; line-height: 1.5 !important; border-bottom: 2px solid black !important; }
-    h3, .mw-search-result-heading { font-size: 24px !important; line-height: 1.6 !important; }
-    :is(.mw-search-result-data, .reference, .references, .reflist, .mw-footer) { font-size: 18px !important; line-height: 1.7 !important; }
+    h1, .firstHeading { font-size: var(--paperlike-wiki-h1, 40px) !important; line-height: 1.5 !important; }
+    h2 { font-size: var(--paperlike-wiki-h2, 34px) !important; line-height: 1.5 !important; border-bottom: 2px solid black !important; }
+    h3, .mw-search-result-heading { font-size: var(--paperlike-wiki-h3, 30px) !important; line-height: 1.6 !important; }
+    :is(.mw-search-result-data, .reference, .references, .reflist, .mw-footer) { font-size: var(--paperlike-wiki-note, 24px) !important; line-height: 1.7 !important; }
     :is(.mw-body, #mw-content-text) a { color: black !important; text-decoration: underline !important; text-underline-offset: 3px; }
     .mw-search-result { padding: 16px 0 !important; border-bottom: 2px solid black !important; }
     .mw-search-result-heading a { display: inline-block; min-height: 48px; font-weight: 700; }
@@ -51,8 +62,30 @@
     #mw-content-text :is(td, th) { background-color: white !important; color: black !important; border-color: black !important; }
     :is(img, video) { max-width: 100%; height: auto; filter: grayscale(1) contrast(1.1); }
     .mw-parser-output { overflow-x: auto; }
-    @media (max-width: 700px) { .mw-page-container { padding: 16px !important; } }
+
   `;
   (document.head || document.documentElement).appendChild(style);
-  window.PaperlikeWiki = {ready: true};
+  const root = document.documentElement;
+  let fontSize = 28, margin = 60;
+  const apply = () => {
+    const effectiveMargin = Math.min(margin, Math.max(0, Math.floor((innerWidth - 320) / 2)));
+    root.style.setProperty('--paperlike-wiki-font', `${fontSize}px`);
+    root.style.setProperty('--paperlike-wiki-margin', `${effectiveMargin}px`);
+    root.style.setProperty('--paperlike-wiki-h1', `${Math.round(fontSize * 1.45)}px`);
+    root.style.setProperty('--paperlike-wiki-h2', `${Math.round(fontSize * 1.2)}px`);
+    root.style.setProperty('--paperlike-wiki-h3', `${fontSize + 2}px`);
+    root.style.setProperty('--paperlike-wiki-note', `${Math.max(20, fontSize - 4)}px`);
+    return {fontSize, margin, effectiveMargin};
+  };
+  window.PaperlikeWiki = {
+    ready: true,
+    setLayout(font, padding) {
+      if (Number.isFinite(font)) fontSize = Math.min(48, Math.max(20, Math.round(font)));
+      if (Number.isFinite(padding)) margin = Math.min(240, Math.max(0, Math.round(padding)));
+      return apply();
+    },
+    layoutState: apply
+  };
+  addEventListener('resize', apply);
+  apply();
 })();

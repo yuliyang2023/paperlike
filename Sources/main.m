@@ -284,7 +284,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
         self.wikiWindowController = [[WikiWindowController alloc] initWithTestMode:self.wikiTestMode];
         NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
         NSRect available = screen.visibleFrame;
-        CGFloat width = MIN(1100, NSWidth(available)), height = MIN(850, NSHeight(available));
+        CGFloat width = MIN(1400, NSWidth(available)), height = MIN(850, NSHeight(available));
         [self.wikiWindowController.window setFrame:NSMakeRect(NSMidX(available) - width/2, NSMidY(available) - height/2, width, height) display:NO];
     }
     [self.wikiWindowController showSearch];
