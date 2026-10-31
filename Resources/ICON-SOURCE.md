@@ -9,4 +9,6 @@
 
 图标权利归原权利人所有。本项目为独立阅读工具，与腾讯无隶属关系。
 
-`scripts/create-icon.sh` 使用 macOS 自带的 `sips` 和 `iconutil` 生成各分辨率图标以及 `WeRead.icns`，本地构建和 GitHub Actions 均使用相同流程。
+`scripts/make-app-icon.m` 使用 AppKit 将原始图标置于透明的 1024 × 1024 画布中，图案范围为 824 × 824，四周保留 100 像素留白，并添加圆角及轻微阴影，使启动台和 Dock 中的视觉尺寸与 macOS 原生图标一致。原始图像保持不变。
+
+`scripts/create-icon.sh` 编译并运行此工具，再使用 macOS 自带的 `sips` 和 `iconutil` 生成各分辨率图标以及 `WeRead.icns`，本地构建和 GitHub Actions 均使用相同流程。
