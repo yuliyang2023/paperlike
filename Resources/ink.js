@@ -182,6 +182,7 @@
   `;
   (document.head || document.documentElement).appendChild(controlsStyle);
   const observedPopups = new WeakSet();
+  const pendingPopupPlacements = new WeakMap();
   const fitSelectionPopups = () => {
     for (const popup of document.querySelectorAll('.reader_toolbar_container, .reader_float_mini_tooltip_wrapper')) {
       if (!observedPopups.has(popup)) {
@@ -195,12 +196,20 @@
       // entire inline style attribute when it repositions a selection menu.
       const offsets = popup.style.getPropertyValue('translate').trim().split(/\s+/);
       const previous = {x: parseFloat(offsets[0]) || 0, y: parseFloat(offsets[1]) || 0};
+      // WebKit may keep returning the pre-translation rectangle until paint.
+      // Do not subtract the same pending offset from that stale rectangle twice.
+      const computed = getComputedStyle(popup);
+      const geometryKey = [rect.x, rect.y, rect.width, rect.height, innerWidth, innerHeight,
+        computed.left, computed.top, computed.transform].join('|');
+      const pending = pendingPopupPlacements.get(popup);
+      if (pending?.key === geometryKey && pending.x === previous.x && pending.y === previous.y) continue;
       const x = rect.x - previous.x;
       const y = rect.y - previous.y;
       const desiredX = Math.min(Math.max(16, x), Math.max(16, innerWidth - rect.width - 16));
       const desiredY = Math.min(Math.max(16, y), Math.max(16, innerHeight - rect.height - 16));
       const next = {x: Math.round(desiredX - x), y: Math.round(desiredY - y)};
       if (next.x !== previous.x || next.y !== previous.y) {
+        pendingPopupPlacements.set(popup, {key: geometryKey, x: next.x, y: next.y});
         popup.style.setProperty('translate', `${next.x}px ${next.y}px`, 'important');
       }
     }

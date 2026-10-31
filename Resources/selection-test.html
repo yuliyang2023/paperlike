@@ -8,4 +8,24 @@
 <button class="toolbarItem underlineStraight"><span class="toolbarItem_icon"></span><span class="toolbarItem_text">直线</span></button>
 <button class="toolbarItem review"><span class="toolbarItem_icon"></span><span class="toolbarItem_text">写想法</span></button>
 <button class="toolbarItem query"><span class="toolbarItem_icon"></span><span class="toolbarItem_text">AI问书</span></button>
-</div></div></div></body></html>
+</div></div></div><script>
+// Reproduce WebKit's delayed geometry while a translation is waiting to paint.
+addEventListener('load', () => {
+  const menu = document.querySelector('.reader_toolbar_container');
+  const original = menu.getBoundingClientRect.bind(menu);
+  const size = original(), css = getComputedStyle(menu);
+  const stale = new DOMRect(parseFloat(css.left), parseFloat(css.top), size.width, size.height);
+  const expectedX = Math.round(Math.min(Math.max(16, stale.x), Math.max(16, innerWidth - stale.width - 16)) - stale.x);
+  const expectedY = Math.round(Math.min(Math.max(16, stale.y), Math.max(16, innerHeight - stale.height - 16)) - stale.y);
+  menu.style.setProperty('translate', '0px 0px', 'important');
+  menu.getBoundingClientRect = () => stale;
+  const tick = setInterval(() => dispatchEvent(new Event('resize')), 20);
+  setTimeout(() => {
+    const values = menu.style.translate.split(/\s+/).map(parseFloat);
+    window.paperlikeGeometryStable = Math.abs(values[0] - expectedX) <= 1 && Math.abs(values[1] - expectedY) <= 1;
+    clearInterval(tick);
+    menu.getBoundingClientRect = original;
+    dispatchEvent(new Event('resize'));
+  }, 220);
+});
+</script></body></html>
