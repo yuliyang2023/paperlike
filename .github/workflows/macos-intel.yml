@@ -1,0 +1,53 @@
+name: Build macOS Intel
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-intel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: macOS Intel (x86_64)
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and verify Intel application
+        run: bash build.sh
+
+      - name: Run offline WebKit self-test
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          subprocess.run(
+              ["build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader", "--self-test"],
+              timeout=60,
+              check=True,
+          )
+          PY
+
+      - name: Package application
+        run: bash scripts/package.sh
+
+      - name: Upload Intel application and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: PaperlikeReader-macos-intel
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>PaperlikeReader</string>
+<key>CFBundleIdentifier</key><string>local.paperlike.reader</string>
+<key>CFBundleName</key><string>Paperlike Reader</string>
+<key>CFBundleDisplayName</key><string>墨读 Paperlike</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.2</string>
+<key>CFBundleVersion</key><string>3</string>
+<key>LSMinimumSystemVersion</key><string>12.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSHumanReadableCopyright</key><string>Independent local reader. Not affiliated with Tencent or DASUNG.</string>
+</dict></plist>
