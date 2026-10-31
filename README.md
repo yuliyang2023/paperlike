@@ -23,7 +23,9 @@
 
 - **AI 问书**：聊天正文和推荐问题放大至 20 CSS 像素，引用信息 18 像素，输入框 22 像素，发送按钮 56 × 56；墨水模式采用白底黑字、实线边框和清晰的禁用状态。适配独立聊天子页面，长回答保持滚动，输入框固定可见。
 
-快捷键：`⌘[` / `⌘]` 翻屏，`⌘+` / `⌘−` 缩放，`⌘0` 重置，`⌘I` 墨水模式，`⌘P` 移到 Paperlike，`⌘F` 全屏，`⌘H` 首页，`⌘R` 重载。
+- **Wiki 搜索**：点击工具栏“Wiki 搜索”（⌘K），在独立窗口输入关键词并回车，搜索中文维基百科。原书籍窗口保留；支持返回、前进及维基词条间跳转。搜索结果和正文采用 22 CSS 像素大字、白底黑字、清晰链接与大按钮；插图灰度显示。外部参考链接使用系统浏览器打开。
+
+快捷键：`⌘[` / `⌘]` 翻屏，`⌘+` / `⌘−` 缩放，`⌘0` 重置，`⌘I` 墨水模式，`⌘P` 移到 Paperlike，`⌘F` 全屏，`⌘H` 首页，`⌘R` 重载，`⌘K` Wiki 搜索。
 
 登录状态由本机 WebKit 保存；本项目没有远程后端、遥测、账号采集或书籍导出功能。书籍权限、付费内容、书架与进度同步由微信读书处理。应用不会修改显示器分辨率或刷新率；硬件清屏和刷新模式需使用显示器自身按键。
 
@@ -37,6 +39,8 @@ bash build.sh
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --selection-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ai-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ui-test
+"build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --wiki-test
+"build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --wiki-live-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --smoke-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --reader-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --layout-test
@@ -83,3 +87,5 @@ bash scripts/package.sh
 0.1.10 修复 AI 问书提交后聊天空白：白色背景仅应用到明确的聊天区域，保留官网全屏 Toast 提示容器的透明背景，避免遮住已生成的提问和回答。离线自检加入该提示层，防止再次出现遮挡。
 
 0.1.11 增加应用原生界面的墨水屏适配，并修正设置面板放大后的边缘裁切。`--ui-test` 在离线页面中操作真实原生按钮，验证页边距、行距、恢复默认、工具栏滚动和墨水模式状态，检查加减按钮不会被面板裁切，并保存工具栏与面板截图。自检不写入阅读设置或窗口尺寸。
+
+0.1.12 增加独立 Wiki 搜索窗口。`--wiki-test` 离线验证搜索结果到词条的跳转、黑白大字、透明层、中文与特殊字符 URL 编码及导航域名限制，GitHub Actions 同时运行。`--wiki-live-test` 访问中文维基百科搜索“电子纸”并打开结果，验证实际网站样式与导航；需要可访问 Wikipedia 的网络和桌面会话。Wiki 窗口使用临时 WebKit 存储，页面样式始终为墨水屏适配，不影响书籍窗口的登录和阅读进度。

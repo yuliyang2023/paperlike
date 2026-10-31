@@ -2,6 +2,7 @@
 #import <WebKit/WebKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import "InkControls.h"
+#import "WikiWindow.h"
 
 static NSString * const HomeURL = @"https://weread.qq.com/";
 
@@ -28,6 +29,8 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 @property NSString *layoutKind;
 @property BOOL selfTest;
 @property BOOL uiTest;
+@property NSUInteger wikiTestMode;
+@property WikiWindowController *wikiWindowController;
 @property NSScrollView *toolbarScroll;
 @property BOOL selectionTest;
 @property BOOL selectionNarrowTest;
@@ -51,6 +54,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 - (void)moveToPaperlike:(id)sender;
 - (void)fullScreen:(id)sender;
 - (void)help:(id)sender;
+- (void)showWiki:(id)sender;
 - (void)showMargins:(id)sender;
 - (void)showLineSpacing:(id)sender;
 - (void)decreaseLayout:(id)sender;
@@ -101,6 +105,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     NSMenu *view = [[NSMenu alloc] initWithTitle:@"阅读"];
     viewItem.submenu = view;
     [self addMenu:view title:@"微信读书首页 / 书架入口" action:@selector(home:) key:@"h"];
+    [self addMenu:view title:@"Wiki 搜索" action:@selector(showWiki:) key:@"k"];
     [self addMenu:view title:@"重新载入" action:@selector(reload:) key:@"r"];
     [view addItem:NSMenuItem.separatorItem];
     [self addMenu:view title:@"上一屏" action:@selector(previous:) key:@"["];
@@ -118,7 +123,8 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     self.selectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
     self.aiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ai-test"];
     self.uiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test"];
-    self.selfTest = self.uiTest || self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    self.wikiTestMode = [NSProcessInfo.processInfo.arguments containsObject:@"--wiki-test"] ? 1 : ([NSProcessInfo.processInfo.arguments containsObject:@"--wiki-live-test"] ? 2 : 0);
+    self.selfTest = self.wikiTestMode || self.uiTest || self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
     self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
@@ -170,6 +176,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     self.webView.pageZoom = self.zoom;
 
     NSButton *home = [self button:@"首页" action:@selector(home:) tooltip:@"微信读书首页，登录后进入书架（⌘H）"];
+    NSButton *wiki = [self button:@"Wiki 搜索" action:@selector(showWiki:) tooltip:@"打开独立的中文维基百科搜索窗口（⌘K）"];
     NSButton *reload = [self button:@"重载" action:@selector(reload:) tooltip:@"重新载入网页（⌘R）"];
     NSButton *previous = [self button:@"← 上一屏" action:@selector(previous:) tooltip:@"向上翻一屏（⌘[）"];
     NSButton *next = [self button:@"下一屏 →" action:@selector(next:) tooltip:@"向下翻一屏（⌘]）"];
@@ -182,7 +189,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     [self.inkButton.widthAnchor constraintGreaterThanOrEqualToConstant:176].active = YES;
     NSButton *screen = [self button:@"移到 Paperlike" action:@selector(moveToPaperlike:) tooltip:@"定位已连接的 Paperlike 显示器（⌘P）"];
     NSButton *full = [self button:@"全屏" action:@selector(fullScreen:) tooltip:@"切换全屏（⌘F）"];
-    NSStackView *toolbar = [NSStackView stackViewWithViews:@[home, reload, previous, next, smaller, self.zoomLabel, larger, margins, lineSpacing, self.inkButton, screen, full]];
+    NSStackView *toolbar = [NSStackView stackViewWithViews:@[home, reload, wiki, previous, next, smaller, self.zoomLabel, larger, margins, lineSpacing, self.inkButton, screen, full]];
     toolbar.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     toolbar.alignment = NSLayoutAttributeCenterY;
     toolbar.spacing = 12;
@@ -256,7 +263,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
         if (self.selectionTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"selection-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         if (self.aiTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"ai-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         [self.webView loadHTMLString:fixture baseURL:[NSURL URLWithString:@"https://weread.qq.com/web/reader/test"]];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (self.wikiTestMode ? 60 : 20) * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
     } else {
         [self.window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
@@ -270,6 +277,17 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     self.zoomLabel.title = [NSString stringWithFormat:@"%.0f%%", self.zoom * 100];
     self.inkButton.state = self.ink ? NSControlStateValueOn : NSControlStateValueOff;
     self.inkButton.title = self.ink ? @"墨水模式 ✓" : @"墨水模式 关";
+}
+- (void)showWiki:(id)sender {
+    (void)sender;
+    if (!self.wikiWindowController) {
+        self.wikiWindowController = [[WikiWindowController alloc] initWithTestMode:self.wikiTestMode];
+        NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
+        NSRect available = screen.visibleFrame;
+        CGFloat width = MIN(1100, NSWidth(available)), height = MIN(850, NSHeight(available));
+        [self.wikiWindowController.window setFrame:NSMakeRect(NSMidX(available) - width/2, NSMidY(available) - height/2, width, height) display:NO];
+    }
+    [self.wikiWindowController showSearch];
 }
 - (void)home:(id)sender { (void)sender; [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:HomeURL]]]; }
 - (void)reload:(id)sender { (void)sender; [self.webView reload]; }
@@ -523,6 +541,9 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     NSString *layoutJS = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", self.pageMargin, self.lineSpacing];
     [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
+    if (self.wikiTestMode) {
+        [self showWiki:nil]; [self.wikiWindowController runDisplayTest]; return;
+    }
     if (self.uiTest) { [self checkNativeUITest:0]; return; }
     if (self.aiTest) { [self checkAITest:0]; return; }
     if (self.selectionTest) { [self checkSelectionTest:0]; return; }
