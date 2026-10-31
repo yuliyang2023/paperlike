@@ -580,7 +580,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
         NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
         BOOL passed = !error && [r[@"passed"] boolValue];
-        if (!passed && attempt < 15) {
+        if (!passed && attempt < 35) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkSelectionTest:attempt + 1]; });
             return;
         }

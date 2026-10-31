@@ -181,8 +181,13 @@
     }
   `;
   (document.head || document.documentElement).appendChild(controlsStyle);
+  const observedPopups = new WeakSet();
   const fitSelectionPopups = () => {
     for (const popup of document.querySelectorAll('.reader_toolbar_container, .reader_float_mini_tooltip_wrapper')) {
+      if (!observedPopups.has(popup)) {
+        popupResizeObserver.observe(popup);
+        observedPopups.add(popup);
+      }
       if (!popup.getClientRects().length || getComputedStyle(popup).visibility === 'hidden') continue;
       const rect = popup.getBoundingClientRect();
       if (!rect.width || !rect.height) continue;
@@ -205,11 +210,12 @@
     if (popupFrame !== null) return;
     popupFrame = requestAnimationFrame(() => { popupFrame = null; fitSelectionPopups(); });
   };
+  const popupResizeObserver = new ResizeObserver(schedulePopupFit);
+  popupResizeObserver.observe(document.documentElement);
   window.addEventListener('resize', () => {
     schedulePopupFit();
     // WKWebView can finish its zoom/viewport layout after the resize callback.
-    setTimeout(fitSelectionPopups, 100);
-    setTimeout(fitSelectionPopups, 350);
+    for (const delay of [100, 350, 750, 1500]) setTimeout(fitSelectionPopups, delay);
   });
   window.addEventListener('scroll', schedulePopupFit, {passive: true});
   const layoutStyle = document.createElement('style');
