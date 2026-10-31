@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>书内 Wiki 划词验证</title><style>
+body{margin:0;background:white;font-family:system-ui}.readerChapterContent{padding:36px;font-size:28px;line-height:1.8}.reader_toolbar_container{position:absolute;left:calc(100% - 40px);top:calc(100% - 30px)}.toolbarItem_icon{display:block;width:24px;height:24px;background:black}.toolbarItem_text{font-size:12px}
+</style></head><body><div id="app"><main class="readerChapterContent"><h1>书内查词显示验证</h1><p>选中的词语：<span id="test-selection">电子纸</span></p><p>侧栏关闭后，这本书仍保持在原位置。</p></main><div class="reader_toolbar_container" data-wr-role="selectionToolbar"><div class="reader_toolbar_content"><div class="reader_toolbar_itemContainer"></div></div></div></div><script>
+window.originalActions=[];
+const element=document.querySelector('.reader_toolbar_container');
+const items=[['copy','复制','wr_copy'],['marker','马克笔','underlineBg'],['wave','波浪线','underlineHandWrite'],['line','直线','underlineStraight'],['review','写想法','review'],['aichat','AI问书','query']].map(([key,text,css])=>({key,text,type:key,classNames:[css]}));
+const modules = {
+  reader(module) { module.exports = {default:{name:'ReaderHorizontal',methods:{showSelectionToolBar(options){element.style.display='';toolbar.$forceUpdate();},clearSelection(){getSelection().removeAllRanges();}}}}; },
+  toolbar(module) { module.exports = {default:{name:'ReaderSelectionToolBar',computed:{showItems(){return items;}},methods:{handleClickItem(item){originalActions.push(item.key);},show(){element.style.display='';this.$forceUpdate();},hide(){element.style.display='none';}}}}; }
+};
+// Exercise the production module adapter, including webpack replacing push.
+window.webpackJsonp.push([['selection-test'],modules]);
+const oldPush = window.webpackJsonp.push.bind(window.webpackJsonp);
+window.webpackJsonp.push = function(chunk){return oldPush(chunk);};
+const outputs = {};
+for (const key of Object.keys(modules)) { const module={exports:{}};modules[key](module);outputs[key]=module.exports.default; }
+const toolbar={$options:outputs.toolbar,$el:element,$nextTick:fn=>fn(),...outputs.toolbar.methods,$forceUpdate(){const root=element.querySelector('.reader_toolbar_itemContainer');root.replaceChildren(...this.showItems.map(item=>{const button=document.createElement('button');button.className='toolbarItem '+item.classNames.join(' ');button.innerHTML='<span class="toolbarItem_icon"></span><span class="toolbarItem_text"></span>';button.querySelector('.toolbarItem_text').textContent=item.text;button.onclick=event=>{event.stopPropagation();this.handleClickItem(item);};return button;}));}};
+Object.defineProperty(toolbar,'showItems',{configurable:true,get(){return outputs.toolbar.computed.showItems.call(this);}});
+const reader={...outputs.reader.methods};window.testReader=reader;
+reader.showSelectionToolBar({objs:[]});toolbar.show();
+</script></body></html>

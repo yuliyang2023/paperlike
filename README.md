@@ -23,7 +23,7 @@
 
 - **AI 问书**：聊天正文和推荐问题放大至 20 CSS 像素，引用信息 18 像素，输入框 22 像素，发送按钮 56 × 56；墨水模式采用白底黑字、实线边框和清晰的禁用状态。适配独立聊天子页面，长回答保持滚动，输入框固定可见。
 
-- **Wiki 搜索**：点击工具栏“Wiki 搜索”（⌘K），在独立窗口输入关键词并回车，搜索中文维基百科。原书籍窗口保留；支持返回、前进及维基词条间跳转。搜索结果和正文默认 28 CSS 像素大字、白底黑字、清晰链接与大按钮；插图灰度显示。Wiki 工具栏“字号 − / ＋”每次调整 2px，范围 20–48px；“页边距”调节左右留白，每次 20px，范围 0–240px，默认 60px。“恢复默认”还原字号和页边距。两项单独保存在本机，切换词条、重新打开应用后仍保留，不影响书籍设置。外部参考链接使用系统浏览器打开。
+- **书内 Wiki 划词搜索**：在书中选中文字，点击选文工具条的“Wiki 搜索”，结果和词条在书页右侧显示，类似 AI 问书；关闭侧栏后继续原来的阅读位置。顶部“Wiki 搜索”和 ⌘K 同样搜索当前选区，未划词时提示先选中文字。侧栏支持修改关键词、返回、前进、调整字号和左右页边距，采用白底黑字及大按钮，设置单独保存。正文默认 28px，字号范围 20–48px，每次 2px；页边距每次 20px，并随侧栏宽度限制上限，保留至少 320px 阅读宽度。外部参考链接使用系统浏览器打开。
 
 快捷键：`⌘[` / `⌘]` 翻屏，`⌘+` / `⌘−` 缩放，`⌘0` 重置，`⌘I` 墨水模式，`⌘P` 移到 Paperlike，`⌘F` 全屏，`⌘H` 首页，`⌘R` 重载，`⌘K` Wiki 搜索。
 
@@ -40,6 +40,7 @@ bash build.sh
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ai-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ui-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --wiki-test
+"build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --wiki-selection-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --wiki-live-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --smoke-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --reader-test
@@ -91,3 +92,5 @@ bash scripts/package.sh
 0.1.12 增加独立 Wiki 搜索窗口。`--wiki-test` 离线验证搜索结果到词条的跳转、黑白大字、透明层、中文与特殊字符 URL 编码及导航域名限制，GitHub Actions 同时运行。`--wiki-live-test` 访问中文维基百科搜索“电子纸”并打开结果，验证实际网站样式与导航；需要可访问 Wikipedia 的网络和桌面会话。Wiki 窗口使用临时 WebKit 存储，页面样式始终为墨水屏适配，不影响书籍窗口的登录和阅读进度。
 
 0.1.13 增加 Wiki 字号和左右页边距调节，正文、表格、提示框和引用随字号放大。工具栏保持单行，窄窗口可以横向滚动。Wiki 离线和真实网站测试同时验证实际文字大小、正文宽度变化、导航后设置保留、恢复默认，以及大字页边距面板的按钮边界。
+
+0.1.14 将 Wiki 搜索改为书内划词侧栏，复用官网的选文工具条生成“Wiki 搜索”按钮；从阅读组件的当前选区对象中获取画布选中文字，清除选区时同步清除关键词。`--wiki-selection-test` 验证画布/普通文字选区、原有复制操作、新按钮到原生侧栏的消息传递，以及侧栏关闭重开后保留书页；在 GitHub Actions 中运行。真实试读测试同时检查横向、纵向阅读组件和选文工具条已接入、正文正常绘制并可翻页。当前划词适配依赖官网组件结构，官网更新后可能需要调整。

@@ -2,7 +2,7 @@
 #import <WebKit/WebKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import "InkControls.h"
-#import "WikiWindow.h"
+#import "WikiPanel.h"
 
 static NSString * const HomeURL = @"https://weread.qq.com/";
 
@@ -30,7 +30,8 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 @property BOOL selfTest;
 @property BOOL uiTest;
 @property NSUInteger wikiTestMode;
-@property WikiWindowController *wikiWindowController;
+@property WikiPanelController *wikiPanelController;
+@property BOOL wikiSelectionTest;
 @property NSScrollView *toolbarScroll;
 @property BOOL selectionTest;
 @property BOOL selectionNarrowTest;
@@ -120,11 +121,12 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
-    self.selectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
+    self.wikiSelectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--wiki-selection-test"];
+    self.selectionTest = self.wikiSelectionTest || [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
     self.aiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ai-test"];
     self.uiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test"];
     self.wikiTestMode = [NSProcessInfo.processInfo.arguments containsObject:@"--wiki-test"] ? 1 : ([NSProcessInfo.processInfo.arguments containsObject:@"--wiki-live-test"] ? 2 : 0);
-    self.selfTest = self.wikiTestMode || self.uiTest || self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    self.selfTest = self.wikiTestMode || self.wikiSelectionTest || self.uiTest || self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
     self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
@@ -155,6 +157,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     [config.userContentController addScriptMessageHandler:self name:@"paperlikeStatus"];
+    [config.userContentController addScriptMessageHandler:self name:@"paperlikeWikiSearch"];
     config.websiteDataStore = (self.selfTest || self.smokeTest) ? WKWebsiteDataStore.nonPersistentDataStore : WKWebsiteDataStore.defaultDataStore;
     if (self.readerTest) {
         NSString *diagnostics = @"window.PaperlikeDiagnostics=[]; addEventListener('error', e => { if(PaperlikeDiagnostics.length<10) PaperlikeDiagnostics.push({kind:'error',message:e.message,line:e.lineno}); }); addEventListener('unhandledrejection', e => { if(PaperlikeDiagnostics.length<10) PaperlikeDiagnostics.push({kind:'rejection',message:String(e.reason && e.reason.message || 'unhandled rejection')}); });";
@@ -169,6 +172,9 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     if (!aiScript) { fprintf(stderr, "Missing ai.js\n"); exit(1); }
     NSString *initialAIScript = [aiScript stringByAppendingFormat:@"\nwindow.PaperlikeAI?.setInk(%@);", self.ink ? @"true" : @"false"];
     [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:initialAIScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
+    NSString *selectionScript = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"wiki-selection" withExtension:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!selectionScript) { fprintf(stderr, "Missing wiki-selection.js\n"); exit(1); }
+    [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:selectionScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
     self.webView = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:config];
     self.webView.navigationDelegate = self;
     self.webView.UIDelegate = self;
@@ -176,7 +182,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     self.webView.pageZoom = self.zoom;
 
     NSButton *home = [self button:@"首页" action:@selector(home:) tooltip:@"微信读书首页，登录后进入书架（⌘H）"];
-    NSButton *wiki = [self button:@"Wiki 搜索" action:@selector(showWiki:) tooltip:@"打开独立的中文维基百科搜索窗口（⌘K）"];
+    NSButton *wiki = [self button:@"Wiki 搜索" action:@selector(showWiki:) tooltip:@"在书中选中文字后搜索 Wiki，在书内侧栏显示（⌘K）"];
     NSButton *reload = [self button:@"重载" action:@selector(reload:) tooltip:@"重新载入网页（⌘R）"];
     NSButton *previous = [self button:@"← 上一屏" action:@selector(previous:) tooltip:@"向上翻一屏（⌘[）"];
     NSButton *next = [self button:@"下一屏 →" action:@selector(next:) tooltip:@"向下翻一屏（⌘]）"];
@@ -255,15 +261,16 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     ]];
     [self updateControls];
     if (self.selfTest) {
-        if (self.selectionTest || self.aiTest || self.uiTest) {
+        if (self.selectionTest || self.aiTest || self.uiTest || self.wikiTestMode) {
             [self.window makeKeyAndOrderFront:nil];
             [NSApp activateIgnoringOtherApps:YES];
         }
         NSString *fixture = @"<!doctype html><html><head><meta charset='utf-8'></head><body><h1>墨读 · 显示测试</h1><p>Paperlike 2200 × 1650</p><div style='height:3000px'>阅读测试正文</div></body></html>";
         if (self.selectionTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"selection-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
+        if (self.wikiSelectionTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"wiki-selection-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         if (self.aiTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"ai-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         [self.webView loadHTMLString:fixture baseURL:[NSURL URLWithString:@"https://weread.qq.com/web/reader/test"]];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (self.wikiTestMode ? 60 : 20) * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ((self.wikiTestMode || self.wikiSelectionTest) ? 60 : 20) * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
     } else {
         [self.window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
@@ -278,16 +285,19 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     self.inkButton.state = self.ink ? NSControlStateValueOn : NSControlStateValueOff;
     self.inkButton.title = self.ink ? @"墨水模式 ✓" : @"墨水模式 关";
 }
+- (void)openWikiQuery:(NSString *)query {
+    NSString *text = [query stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!text.length) { self.status.stringValue = @"请先在正文划词，再点击 Wiki 搜索。"; return; }
+    if (text.length > 500) { self.status.stringValue = @"选中文字过长，请缩小选区后搜索 Wiki。"; return; }
+    if (!self.wikiPanelController) self.wikiPanelController = [[WikiPanelController alloc] initWithTestMode:self.wikiSelectionTest ? 1 : self.wikiTestMode];
+    [self.wikiPanelController presentInView:self.window.contentView readerView:self.webView query:text];
+}
 - (void)showWiki:(id)sender {
     (void)sender;
-    if (!self.wikiWindowController) {
-        self.wikiWindowController = [[WikiWindowController alloc] initWithTestMode:self.wikiTestMode];
-        NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
-        NSRect available = screen.visibleFrame;
-        CGFloat width = MIN(1400, NSWidth(available)), height = MIN(850, NSHeight(available));
-        [self.wikiWindowController.window setFrame:NSMakeRect(NSMidX(available) - width/2, NSMidY(available) - height/2, width, height) display:NO];
-    }
-    [self.wikiWindowController showSearch];
+    [self.webView evaluateJavaScript:@"window.PaperlikeWikiSelection?.currentText() || ''" completionHandler:^(id value, NSError *error) {
+        if (!error && [value isKindOfClass:NSString.class]) [self openWikiQuery:value];
+        else self.status.stringValue = @"请先打开书籍并划词，再使用 Wiki 搜索。";
+    }];
 }
 - (void)home:(id)sender { (void)sender; [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:HomeURL]]]; }
 - (void)reload:(id)sender { (void)sender; [self.webView reload]; }
@@ -434,6 +444,17 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
     (void)controller;
+    if ([message.name isEqualToString:@"paperlikeWikiSearch"]) {
+        if (!message.frameInfo.mainFrame || ![self.webView.URL.host isEqualToString:@"weread.qq.com"] || ![self.webView.URL.path hasPrefix:@"/web/reader/"] || ![message.body isKindOfClass:NSString.class]) return;
+        [self openWikiQuery:message.body];
+        if (self.wikiSelectionTest) {
+            BOOL embedded = self.wikiPanelController.view.superview == self.window.contentView && self.wikiPanelController.view.window == self.window;
+            if (![message.body isEqualToString:@"电子纸"] || !embedded) { fprintf(stderr, "WIKI SELECTION BRIDGE FAIL\n"); exit(12); }
+            fprintf(stdout, "WIKI SELECTION BRIDGE PASS · selected text, same reader window\n"); fflush(stdout);
+            [self.wikiPanelController runDisplayTest];
+        }
+        return;
+    }
     if (self.selfTest || self.smokeTest || !message.frameInfo.mainFrame ||
         ![self.webView.URL.host isEqualToString:@"weread.qq.com"]) return;
     if ([message.body isEqual:@"reflowing"]) {
@@ -542,10 +563,11 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
     if (self.wikiTestMode) {
-        [self showWiki:nil]; [self.wikiWindowController runDisplayTest]; return;
+        [self openWikiQuery:@"电子纸"]; [self.wikiPanelController runDisplayTest]; return;
     }
     if (self.uiTest) { [self checkNativeUITest:0]; return; }
     if (self.aiTest) { [self checkAITest:0]; return; }
+    if (self.wikiSelectionTest) { [self checkWikiSelectionTest:0]; return; }
     if (self.selectionTest) { [self checkSelectionTest:0]; return; }
     if (self.selfTest) [self runSelfTest];
     if (self.readerTest) { [self checkReaderTest:0 advanced:NO]; return; }
@@ -562,10 +584,10 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     }
 }
 - (void)checkReaderTest:(NSUInteger)attempt advanced:(BOOL)advanced {
-    NSString *js = @"(() => { const visible = x => x && x.getClientRects().length && x.getBoundingClientRect().width > 0 && x.getBoundingClientRect().height > 0; const canvases=[...document.querySelectorAll('canvas')]; let painted=false; for (const source of canvases) { if (!source.width || !source.height) continue; try { const probe=document.createElement('canvas'); probe.width=128; probe.height=128; const ctx=probe.getContext('2d'); ctx.drawImage(source,0,0,128,128); const d=ctx.getImageData(0,0,128,128).data; for(let i=0;i<d.length;i+=4) { if(d[i+3]>20 && Math.min(d[i],d[i+1],d[i+2])<200) { painted=true; break; } } } catch(_) {} if(painted) break; } const chapter=document.querySelector('.readerChapterContent'); return {whiteTheme:document.body.classList.contains('wr_whiteTheme'),background:chapter?getComputedStyle(chapter).backgroundColor:null,pageReady:[...document.querySelectorAll('.renderTarget_pager_button_right')].some(visible),canvases:canvases.length,painted,bridge:!!window.PaperlikeReader,errors:window.PaperlikeDiagnostics||[],readyState:document.readyState}; })()";
+    NSString *js = @"(() => { const visible = x => x && x.getClientRects().length && x.getBoundingClientRect().width > 0 && x.getBoundingClientRect().height > 0; const canvases=[...document.querySelectorAll('canvas')]; let painted=false; for (const source of canvases) { if (!source.width || !source.height) continue; try { const probe=document.createElement('canvas'); probe.width=128; probe.height=128; const ctx=probe.getContext('2d'); ctx.drawImage(source,0,0,128,128); const d=ctx.getImageData(0,0,128,128).data; for(let i=0;i<d.length;i+=4) { if(d[i+3]>20 && Math.min(d[i],d[i+1],d[i+2])<200) { painted=true; break; } } } catch(_) {} if(painted) break; } const chapter=document.querySelector('.readerChapterContent'); return {whiteTheme:document.body.classList.contains('wr_whiteTheme'),background:chapter?getComputedStyle(chapter).backgroundColor:null,pageReady:[...document.querySelectorAll('.renderTarget_pager_button_right')].some(visible),canvases:canvases.length,painted,bridge:!!window.PaperlikeReader,wikiAdapters:window.PaperlikeWikiSelection?.stats,errors:window.PaperlikeDiagnostics||[],readyState:document.readyState}; })()";
     [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
         NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
-        BOOL ready = !error && ([r[@"painted"] boolValue] || (!advanced && [r[@"pageReady"] boolValue]));
+        BOOL ready = !error && [r[@"wikiAdapters"][@"readers"] intValue] > 0 && ([r[@"painted"] boolValue] || (!advanced && [r[@"pageReady"] boolValue]));
         if (!ready && attempt < 40) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkReaderTest:attempt + 1 advanced:advanced]; });
             return;
@@ -650,6 +672,16 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
         if (error) fprintf(stderr, "%s\n", error.description.UTF8String);
         fflush(stdout);
         exit(passed ? 0 : 4);
+    }];
+}
+- (void)checkWikiSelectionTest:(NSUInteger)attempt {
+    NSString *js = @"(() => {const api=window.PaperlikeWikiSelection,button=document.querySelector('.paperlike_wiki');if(!api||!button)return {ready:false};const reader=window.testReader;reader.showSelectionToolBar({objs:[{text:'电子',isTextOrCanvasType:()=>true},{text:'纸',isTextOrCanvasType:()=>true}]});const canvas=api.currentText()==='电子纸'&&!getSelection().toString();reader.clearSelection();const cleared=api.currentText()==='';const range=document.createRange();range.selectNodeContents(document.querySelector('#test-selection'));getSelection().addRange(range);const dom=api.currentText()==='电子纸';getSelection().removeAllRanges();document.querySelector('.wr_copy').click();const original=window.originalActions.includes('copy');reader.showSelectionToolBar({objs:[{text:'电子纸',isTextOrCanvasType:()=>true}]});const r=document.querySelector('.paperlike_wiki').getBoundingClientRect();const visible=r.width>=87.9&&r.height>=79.9&&r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;return {ready:visible,passed:canvas&&cleared&&dom&&original,canvas,cleared,dom,original,buttons:document.querySelectorAll('.toolbarItem').length};})()";
+    [self.webView evaluateJavaScript:js completionHandler:^(id value, NSError *error) {
+        NSDictionary *r = [value isKindOfClass:NSDictionary.class] ? value : @{};
+        if (![r[@"ready"] boolValue] && attempt < 25) { dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100*NSEC_PER_MSEC), dispatch_get_main_queue(), ^{[self checkWikiSelectionTest:attempt+1];}); return; }
+        if (error || ![r[@"passed"] boolValue] || [r[@"buttons"] intValue]!=7) {fprintf(stderr, "WIKI SELECTION FAIL %s %s\n",r.description.UTF8String,error.description.UTF8String);exit(12);}
+        fprintf(stdout, "WIKI SELECTION ADAPTER PASS %s\n",r.description.UTF8String);fflush(stdout);
+        [self.webView evaluateJavaScript:@"document.querySelector('.paperlike_wiki').click();true" completionHandler:nil];
     }];
 }
 - (void)checkSelectionTest:(NSUInteger)attempt {

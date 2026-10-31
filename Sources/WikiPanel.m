@@ -1,4 +1,4 @@
-#import "WikiWindow.h"
+#import "WikiPanel.h"
 #import "InkControls.h"
 #import <WebKit/WebKit.h>
 
@@ -20,7 +20,7 @@
 }
 @end
 
-@interface WikiWindowController () <WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate>
+@interface WikiPanelController () <WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate>
 @property WKWebView *webView;
 @property NSTextField *searchField;
 @property NSTextField *status;
@@ -44,9 +44,10 @@
 @property NSButton *marginMinus;
 @property NSButton *marginPlus;
 @property NSDictionary *baselineLayout;
+@property (weak) NSView *readerView;
 @end
 
-@implementation WikiWindowController
+@implementation WikiPanelController
 - (NSButton *)button:(NSString *)title action:(SEL)action {
     InkButton *button = [[InkButton alloc] initWithFrame:NSZeroRect];
     button.cell = [[InkButtonCell alloc] initTextCell:title];
@@ -61,20 +62,16 @@
     return button;
 }
 - (instancetype)initWithTestMode:(NSUInteger)mode {
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1400, 850)
-        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
-        backing:NSBackingStoreBuffered defer:NO];
-    self = [super initWithWindow:window];
+    self = [super initWithNibName:nil bundle:nil];
     if (!self) return nil;
     self.testMode = mode;
     [NSUserDefaults.standardUserDefaults registerDefaults:@{@"wikiFontSize":@28, @"wikiPageMargin":@60}];
     self.fontSize = mode ? 28 : fmin(48, fmax(20, [NSUserDefaults.standardUserDefaults doubleForKey:@"wikiFontSize"]));
     self.pageMargin = mode ? 60 : fmin(240, fmax(0, [NSUserDefaults.standardUserDefaults doubleForKey:@"wikiPageMargin"]));
-    window.title = @"Wiki 搜索 · 墨读"; window.releasedWhenClosed = NO;
-    window.minSize = NSMakeSize(820, 560);
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-    window.backgroundColor = NSColor.whiteColor; window.titlebarAppearsTransparent = YES;
-    [window center];
+    self.view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 900, 800)];
+    self.view.wantsLayer = YES; self.view.layer.backgroundColor = NSColor.whiteColor.CGColor;
+    self.view.layer.borderColor = NSColor.blackColor.CGColor; self.view.layer.borderWidth = 2; self.view.layer.cornerRadius = 8;
+    self.view.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
     configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
     NSString *script = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"wiki" withExtension:@"js"] encoding:NSUTF8StringEncoding error:nil];
@@ -128,29 +125,51 @@
     self.toolbarScroll.wantsLayer = YES; self.toolbarScroll.layer.borderWidth = 1;
     self.toolbarScroll.layer.borderColor = NSColor.blackColor.CGColor;
     [self updateReadingControls];
-    self.status = [NSTextField labelWithString:@"输入关键词后按回车搜索 · 书籍阅读窗口会保留"];
+    NSTextField *heading = [NSTextField labelWithString:@"Wiki 搜索"];
+    heading.font = [NSFont systemFontOfSize:26 weight:NSFontWeightSemibold]; heading.textColor = NSColor.blackColor;
+    NSButton *close = [self button:@"关闭" action:@selector(closePanel:)];
+    NSView *spacer = [[NSView alloc] initWithFrame:NSZeroRect];
+    NSStackView *header = [NSStackView stackViewWithViews:@[heading,spacer,close]];
+    header.orientation = NSUserInterfaceLayoutOrientationHorizontal; header.alignment = NSLayoutAttributeCenterY;
+    header.edgeInsets = NSEdgeInsetsMake(8,16,8,16);
+    [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+    self.status = [NSTextField labelWithString:@"书内查词 · 关闭侧栏即可继续阅读"];
     self.status.font = [NSFont systemFontOfSize:20 weight:NSFontWeightMedium]; self.status.textColor = NSColor.blackColor;
     self.status.lineBreakMode = NSLineBreakByTruncatingTail;
-    NSView *root = window.contentView;
-    for (NSView *view in @[self.toolbarScroll, self.webView, self.status]) { view.translatesAutoresizingMaskIntoConstraints = NO; [root addSubview:view]; }
+    NSView *root = self.view;
+    for (NSView *view in @[header, self.toolbarScroll, self.webView, self.status]) { view.translatesAutoresizingMaskIntoConstraints = NO; [root addSubview:view]; }
     [NSLayoutConstraint activateConstraints:@[
-        [self.toolbarScroll.topAnchor constraintEqualToAnchor:root.topAnchor], [self.toolbarScroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
+        [header.topAnchor constraintEqualToAnchor:root.topAnchor], [header.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
+        [header.trailingAnchor constraintEqualToAnchor:root.trailingAnchor], [header.heightAnchor constraintEqualToConstant:72],
+        [self.toolbarScroll.topAnchor constraintEqualToAnchor:header.bottomAnchor], [self.toolbarScroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [self.toolbarScroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor], [self.toolbarScroll.heightAnchor constraintEqualToConstant:100],
         [self.webView.topAnchor constraintEqualToAnchor:self.toolbarScroll.bottomAnchor], [self.webView.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [self.webView.trailingAnchor constraintEqualToAnchor:root.trailingAnchor], [self.webView.bottomAnchor constraintEqualToAnchor:self.status.topAnchor constant:-12],
         [self.status.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:16], [self.status.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-16],
         [self.status.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-12]
     ]];
-    [self.webView loadHTMLString:@"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><title>Wiki 搜索</title><main class='mw-page-container'><h1>Wiki 搜索</h1><p>在上方输入关键词，搜索中文维基百科。</p><p>搜索结果和词条将采用适合墨水屏的大字、白底黑字显示。</p></main>" baseURL:[NSURL URLWithString:@"https://zh.wikipedia.org/"]];
+    [self.webView loadHTMLString:@"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><title>Wiki 搜索</title><main class='mw-page-container'><h1>Wiki 搜索</h1><p>在书中划词后点击选文工具条的 Wiki 搜索。</p><p>搜索结果和词条将采用适合墨水屏的大字、白底黑字显示。</p></main>" baseURL:[NSURL URLWithString:@"https://zh.wikipedia.org/"]];
+    self.view.postsFrameChangedNotifications = YES;
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(panelFrameChanged:) name:NSViewFrameDidChangeNotification object:self.view];
     return self;
+}
+- (CGFloat)maximumMargin {
+    CGFloat width = NSWidth(self.view.bounds);
+    return MAX(0, MIN(240, floor((width - 336) / 40) * 20));
+}
+- (void)panelFrameChanged:(NSNotification *)notification {
+    (void)notification;
+    if (self.view.superview && self.pageMargin > [self maximumMargin]) [self applyReadingLayout];
+    else [self updateReadingControls];
 }
 - (void)updateReadingControls {
     self.fontValue.stringValue = [NSString stringWithFormat:@"%.0f px", self.fontSize];
     self.fontMinus.enabled = self.fontSize > 20; self.fontPlus.enabled = self.fontSize < 48;
     self.marginValue.stringValue = [NSString stringWithFormat:@"%.0f px", self.pageMargin];
-    self.marginMinus.enabled = self.pageMargin > 0; self.marginPlus.enabled = self.pageMargin < 240;
+    self.marginMinus.enabled = self.pageMargin > 0; self.marginPlus.enabled = self.pageMargin < [self maximumMargin];
 }
 - (void)applyReadingLayout {
+    self.pageMargin = MIN(self.pageMargin, [self maximumMargin]);
     [self updateReadingControls];
     NSString *command = [NSString stringWithFormat:@"window.PaperlikeWiki?.setLayout(%g, %g)", self.fontSize, self.pageMargin];
     [self.webView evaluateJavaScript:command completionHandler:nil];
@@ -166,7 +185,7 @@
 - (void)decreaseFont:(id)sender { (void)sender; self.fontSize = MAX(20, self.fontSize - 2); [self applyReadingLayout]; }
 - (void)increaseFont:(id)sender { (void)sender; self.fontSize = MIN(48, self.fontSize + 2); [self applyReadingLayout]; }
 - (void)decreaseMargin:(id)sender { (void)sender; self.pageMargin = MAX(0, self.pageMargin - 20); [self applyReadingLayout]; }
-- (void)increaseMargin:(id)sender { (void)sender; self.pageMargin = MIN(240, self.pageMargin + 20); [self applyReadingLayout]; }
+- (void)increaseMargin:(id)sender { (void)sender; self.pageMargin = MIN([self maximumMargin], self.pageMargin + 20); [self applyReadingLayout]; }
 - (void)resetReadingLayout:(id)sender { (void)sender; self.fontSize = 28; self.pageMargin = 60; [self applyReadingLayout]; }
 - (void)showMargin:(id)sender {
     (void)sender; [self.marginPopover close];
@@ -216,11 +235,28 @@
     parts.percentEncodedQuery = [parts.percentEncodedQuery stringByReplacingOccurrencesOfString:@"+" withString:@"%2B"];
     return parts.URL;
 }
-- (void)showSearch {
-    [self showWindow:nil]; [self.window makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
-    [self.window makeFirstResponder:self.searchField];
-    [self configureSearchEditor];
+- (void)presentInView:(NSView *)host readerView:(NSView *)reader query:(NSString *)query {
+    self.readerView = reader;
+    if (!self.view.superview) {
+        self.view.translatesAutoresizingMaskIntoConstraints = NO;
+        [host addSubview:self.view positioned:NSWindowAbove relativeTo:reader];
+        NSLayoutConstraint *preferred = [self.view.widthAnchor constraintEqualToAnchor:reader.widthAnchor multiplier:0.55];
+        preferred.priority = NSLayoutPriorityDefaultLow;
+        NSLayoutConstraint *minimum = [self.view.widthAnchor constraintGreaterThanOrEqualToConstant:620];
+        minimum.priority = NSLayoutPriorityDefaultHigh;
+        [NSLayoutConstraint activateConstraints:@[
+            [self.view.trailingAnchor constraintEqualToAnchor:reader.trailingAnchor constant:-16],
+            [self.view.topAnchor constraintEqualToAnchor:reader.topAnchor constant:16],
+            [self.view.bottomAnchor constraintEqualToAnchor:reader.bottomAnchor constant:-16],
+            [self.view.widthAnchor constraintLessThanOrEqualToAnchor:reader.widthAnchor constant:-32],
+            [self.view.widthAnchor constraintLessThanOrEqualToConstant:960], preferred, minimum
+        ]];
+    }
+    [host layoutSubtreeIfNeeded];
+    if (query.length) { self.searchField.stringValue = query; [self submitSearch:nil]; }
+}
+- (void)closePanel:(id)sender {
+    (void)sender; [self.marginPopover close]; [self.view removeFromSuperview];
 }
 - (void)loadWikiURL:(NSURL *)url {
     self.requestedURL = url;
@@ -240,7 +276,7 @@
 - (void)submitSearch:(id)sender {
     (void)sender;
     NSString *query = [self.searchField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!query.length) { self.status.stringValue = @"请输入要查询的关键词。"; [self.window makeFirstResponder:self.searchField]; return; }
+    if (!query.length) { self.status.stringValue = @"请输入要查询的关键词。"; [self.view.window makeFirstResponder:self.searchField]; return; }
     [self loadWikiURL:[self searchURL:query]];
 }
 - (void)goBack:(id)sender { (void)sender; [self.webView goBack]; }
@@ -270,9 +306,9 @@
     (void)navigation;
     [self applyReadingLayout];
     self.backButton.enabled = webView.canGoBack; self.forwardButton.enabled = webView.canGoForward;
-    self.window.title = [NSString stringWithFormat:@"%@ · Wiki · 墨读", webView.title ?: @"维基百科"];
-    self.status.stringValue = @"Wiki 已就绪 · 可继续点击词条链接 · 返回阅读请切换到书籍窗口";
-    if (self.testMode && self.testStage) {
+    self.view.toolTip = webView.title ?: @"Wiki 搜索";
+    self.status.stringValue = @"Wiki 已就绪 · 关闭侧栏返回阅读";
+    if (self.testMode && (self.testStage == 1 || self.testStage == 2 || self.testStage == 4)) {
         // WebKit on older macOS can report pre-paint styles until the first snapshot.
         [self.webView takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *error) {
             (void)image; (void)error; self.testAttempts = 0;
@@ -289,7 +325,6 @@
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error { (void)webView; (void)navigation; [self failed:error]; }
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView { (void)webView; self.status.stringValue = @"Wiki 页面已停止 · 请重新搜索"; }
 - (void)runDisplayTest {
-    [self showSearch];
     NSString *special = @"墨水屏 & Paperlike+#?";
     NSURLComponents *parts = [NSURLComponents componentsWithURL:[self searchURL:special] resolvingAgainstBaseURL:NO];
     BOOL encoding = [parts.queryItems.firstObject.value isEqualToString:special] && [parts.percentEncodedQuery containsString:@"%2B"] && parts.queryItems.count == 4 && parts.fragment.length == 0;
@@ -301,8 +336,10 @@
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50*NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "WIKI timeout\n"); exit(11); });
 }
 - (void)checkDisplayTest {
-    NSString *js = @"(() => {const visible=x=>!!x&&x.getBoundingClientRect().width>0&&x.getBoundingClientRect().height>0;const search=document.querySelector('.mw-search-result-heading a'),article=document.querySelector('.mw-parser-output p');const target=visible(search)?search:article;if(!target)return {passed:false,missing:true};const s=getComputedStyle(target),r=target.getBoundingClientRect();const overlays=[...document.querySelectorAll('.test-overlay')].every(x=>getComputedStyle(x).backgroundColor==='rgba(0, 0, 0, 0)');return {passed:!!window.PaperlikeWiki&&parseFloat(s.fontSize)>=22&&s.color==='rgb(0, 0, 0)'&&getComputedStyle(document.body).backgroundColor==='rgb(255, 255, 255)'&&r.width>0&&r.height>0&&overlays,api:!!window.PaperlikeWiki,url:location.href,base:document.baseURI,styles:document.querySelectorAll('#paperlike-wiki-style').length,margin:window.PaperlikeWiki?.layoutState().effectiveMargin,contentWidth:document.querySelector('.mw-content-container')?.getBoundingClientRect().width,font:s.fontSize,color:s.color,overlays,title:document.title,article:visible(article),search:visible(search)};})()";
+    NSUInteger expectedStage = self.testStage;
+    NSString *js = @"(() => {const visible=x=>!!x&&x.getBoundingClientRect().width>0&&x.getBoundingClientRect().height>0;const search=document.querySelector('.mw-search-result-heading a'),article=document.querySelector('.mw-parser-output p');const target=visible(search)?search:article;if(!target)return {passed:false,missing:true};const s=getComputedStyle(target),r=target.getBoundingClientRect();const overlays=[...document.querySelectorAll('.test-overlay')].every(x=>getComputedStyle(x).backgroundColor==='rgba(0, 0, 0, 0)');return {passed:!!window.PaperlikeWiki&&parseFloat(s.fontSize)>=22&&s.color==='rgb(0, 0, 0)'&&getComputedStyle(document.body).backgroundColor==='rgb(255, 255, 255)'&&r.width>0&&r.height>0&&overlays,api:!!window.PaperlikeWiki,url:location.href,base:document.baseURI,styles:document.querySelectorAll('#paperlike-wiki-style').length,margin:window.PaperlikeWiki?.layoutState().effectiveMargin,requestedMargin:window.PaperlikeWiki?.layoutState().margin,viewport:innerWidth,contentWidth:document.querySelector('.mw-content-container')?.getBoundingClientRect().width,font:s.fontSize,color:s.color,overlays,title:document.title,article:visible(article),search:visible(search)};})()";
     [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        if (self.testStage != expectedStage) return;
         NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
         BOOL passed = !error && [r[@"passed"] boolValue] && (self.testStage == 1 ? [r[@"search"] boolValue] : [r[@"article"] boolValue]);
         if (self.testStage == 3 || self.testStage == 4) {
@@ -316,13 +353,14 @@
         if (!passed && self.testAttempts++ < 20) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100*NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkDisplayTest]; }); return;
         }
-        if (!passed) { fprintf(stderr, "WIKI DISPLAY FAIL %s %s\n", r.description.UTF8String, error.description.UTF8String); exit(11); }
+        if (!passed) { fprintf(stderr, "WIKI DISPLAY FAIL stage=%lu nativeFont=%g nativeMargin=%g panelWidth=%g %s %s\n", (unsigned long)self.testStage,self.fontSize,self.pageMargin,NSWidth(self.view.bounds),r.description.UTF8String,error.description.UTF8String); exit(11); }
         if (self.testStage == 1) {
             self.testStage = 2;
             [self.webView evaluateJavaScript:@"document.querySelector('.mw-search-result-heading a').click();true" completionHandler:nil];
             return;
         }
         if (self.testStage == 2) {
+            self.testStage = 20; // Block duplicate navigation callbacks while the panel opens.
             self.baselineLayout = r;
             [self.fontPlus performClick:nil];
             [self showMargin:nil];
@@ -351,9 +389,18 @@
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200*NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkDisplayTest]; });
             return;
         }
+        NSView *host = self.view.superview, *reader = self.readerView;
+        NSWindow *window = reader.window;
+        NSURL *bookURL = [(WKWebView *)reader URL];
+        if (!host || self.view.window != window) { fprintf(stderr, "WIKI embedded panel FAIL\n"); exit(11); }
+        [self closePanel:nil];
+        BOOL closed = !self.view.superview && reader.window == window && [[(WKWebView *)reader URL] isEqual:bookURL];
+        [self presentInView:host readerView:reader query:@""];
+        if (!closed || self.view.window != window) { fprintf(stderr, "WIKI close/reopen FAIL\n"); exit(11); }
+        fprintf(stdout, "WIKI EMBEDDED PANEL PASS · same window, close/reopen, book retained\n");
         fprintf(stdout, "WIKI DISPLAY PASS · search, article, font/margins, navigation persistence, reset, URL checks\n%s\n", r.description.UTF8String); fflush(stdout);
-        NSView *root = self.window.contentView;
-        NSRect toolbarRect = NSMakeRect(0, NSHeight(root.bounds) - 100, NSWidth(root.bounds), 100);
+        NSView *root = self.view;
+        NSRect toolbarRect = NSMakeRect(0, NSHeight(root.bounds) - 172, NSWidth(root.bounds), 172);
         NSBitmapImageRep *toolbarImage = [root bitmapImageRepForCachingDisplayInRect:toolbarRect];
         [root cacheDisplayInRect:toolbarRect toBitmapImageRep:toolbarImage];
         NSString *toolbarPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"paperlike-wiki-toolbar.png"];
