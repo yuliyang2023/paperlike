@@ -178,17 +178,21 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     toolbarScroll.borderType = NSNoBorder;
 
     self.status = [NSTextField labelWithString:@"正在连接微信读书…"];
-    self.status.font = [NSFont systemFontOfSize:15];
+    self.status.font = [NSFont systemFontOfSize:22 weight:NSFontWeightMedium];
     self.status.textColor = NSColor.blackColor;
     self.status.lineBreakMode = NSLineBreakByTruncatingTail;
+    [self.status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
     self.progress = [[NSProgressIndicator alloc] initWithFrame:NSZeroRect];
     self.progress.style = NSProgressIndicatorStyleSpinning;
-    self.progress.controlSize = NSControlSizeSmall;
+    self.progress.controlSize = NSControlSizeRegular;
     self.progress.displayedWhenStopped = NO;
     NSStackView *footer = [NSStackView stackViewWithViews:@[self.progress, self.status]];
     footer.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    footer.spacing = 8;
-    footer.edgeInsets = NSEdgeInsetsMake(6, 12, 6, 12);
+    footer.spacing = 12;
+    footer.alignment = NSLayoutAttributeCenterY;
+    footer.edgeInsets = NSEdgeInsetsMake(12, 16, 12, 16);
+    footer.wantsLayer = YES;
+    footer.layer.backgroundColor = NSColor.whiteColor.CGColor;
     NSView *content = self.window.contentView;
     for (NSView *view in @[toolbarScroll, self.webView, footer]) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
@@ -206,9 +210,9 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         [footer.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [footer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [footer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
-        [footer.heightAnchor constraintEqualToConstant:30],
-        [self.progress.widthAnchor constraintEqualToConstant:14],
-        [self.progress.heightAnchor constraintEqualToConstant:14]
+        [footer.heightAnchor constraintEqualToConstant:56],
+        [self.progress.widthAnchor constraintEqualToConstant:24],
+        [self.progress.heightAnchor constraintEqualToConstant:24]
     ]];
     [self updateControls];
     if (self.selfTest) {
