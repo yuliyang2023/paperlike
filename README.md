@@ -2,6 +2,8 @@
 
 面向 Paperlike 墨水屏的 macOS 独立阅读应用。使用系统 WKWebView 打开微信读书官网，所有书籍内容和阅读功能由官网提供。本工具与腾讯、DASUNG 无隶属关系。
 
+应用使用微信读书图标，来源及生成方式见 [图标说明](Resources/ICON-SOURCE.md)。
+
 ## 使用
 
 打开 `build/墨读 Paperlike.app`，也可复制到 `~/Applications`。在网页中登录，选择书籍开始阅读。应用有自己的网页数据存储，不会继承其他浏览器的登录状态。

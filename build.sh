@@ -8,6 +8,8 @@ clang -arch x86_64 -fobjc-arc -Wall -Wextra -Werror -mmacosx-version-min=12.0 \
   "$ROOT/Sources/main.m" -o "$APP/Contents/MacOS/PaperlikeReader"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/ink.js" "$APP/Contents/Resources/ink.js"
+bash "$ROOT/scripts/create-icon.sh"
+cp "$ROOT/build/WeRead.icns" "$APP/Contents/Resources/WeRead.icns"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 test "$(lipo -archs "$APP/Contents/MacOS/PaperlikeReader")" = "x86_64"
