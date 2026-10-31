@@ -141,6 +141,26 @@
   let reflowTimer = null;
   let pulseTimer = null;
   let pendingReflow = false;
+  let layoutStatusTimer = null;
+  let layoutStatusDeadline = 0;
+  const watchLayoutStatus = () => {
+    layoutStatusDeadline = Date.now() + 20000;
+    if (layoutStatusTimer !== null) return;
+    const check = () => {
+      layoutStatusTimer = null;
+      // Resize can finish without changing the DOM or hiding the page footer.
+      // Poll completion explicitly rather than relying on mutation events.
+      reportReaderState();
+      const active = pendingReflow || reflowTimer !== null || pulseTimer !== null;
+      if ((active || !readerReady()) && Date.now() < layoutStatusDeadline) {
+        layoutStatusTimer = setTimeout(check, 150);
+      } else if (active || !readerReady()) {
+        lastPageState = 'stalled';
+        window.webkit?.messageHandlers?.paperlikeStatus?.postMessage('stalled');
+      }
+    };
+    layoutStatusTimer = setTimeout(check, 0);
+  };
   const ownResizeEvents = new WeakSet();
   const dispatchResize = () => {
     const event = new Event('resize');
@@ -151,6 +171,7 @@
     .some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
   const queueReflow = () => {
     pendingReflow = true;
+    watchLayoutStatus();
     if (!readerReady() || reflowTimer !== null || pulseTimer !== null) return;
     reflowTimer = setTimeout(() => {
       reflowTimer = null;
@@ -239,7 +260,8 @@
     reader: location.pathname.startsWith('/web/reader/') && !!document.querySelector('.readerChapterContent'),
     margin: layout.margin, effectiveMargin, lineHeight: layout.lineHeight,
     defaultLineHeight, horizontal: !!document.querySelector('.wr_horizontalReader'),
-    reflowing: pendingReflow || reflowTimer !== null || pulseTimer !== null
+    reflowing: pendingReflow || reflowTimer !== null || pulseTimer !== null,
+    reportedState: lastPageState
   });
   const syncFontSize = () => {
     const wrapper = document.querySelector('.font-panel-content-size-wrapper');
@@ -265,7 +287,8 @@
     if (location.pathname.startsWith('/web/reader/')) {
       const ready = [...document.querySelectorAll('.renderTarget_pager_button_right, .readerFooter_button')].some(el =>
         el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
-      state = ready ? 'ready' : 'loading';
+      const reflowing = pendingReflow || reflowTimer !== null || pulseTimer !== null;
+      state = reflowing ? 'reflowing' : ready ? 'ready' : 'loading';
     }
     if (force || state !== lastPageState) {
       lastPageState = state;

@@ -317,7 +317,9 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         [NSUserDefaults.standardUserDefaults setDouble:self.pageMargin forKey:@"pageMargin"];
         [NSUserDefaults.standardUserDefaults setDouble:self.lineSpacing forKey:@"lineSpacing"];
         [self updateLayoutValue];
-        self.status.stringValue = @"正在重新排版正文… · 设置已保存";
+        // The footer may have remained visible throughout reflow, so ask for
+        // current state after saving instead of leaving a one-way busy label.
+        [self.webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
     }];
 }
 - (void)changeLayout:(double)direction {
@@ -353,7 +355,13 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     (void)controller;
     if (self.selfTest || self.smokeTest || !message.frameInfo.mainFrame ||
         ![self.webView.URL.host isEqualToString:@"weread.qq.com"]) return;
-    if ([message.body isEqual:@"loading"]) {
+    if ([message.body isEqual:@"reflowing"]) {
+        [self.progress startAnimation:nil];
+        self.status.stringValue = @"正在重新排版正文… · 设置已保存";
+    } else if ([message.body isEqual:@"stalled"]) {
+        [self.progress stopAnimation:nil];
+        self.status.stringValue = @"正文排版尚未完成 · 可点击“重载”重试";
+    } else if ([message.body isEqual:@"loading"]) {
         [self.progress startAnimation:nil];
         self.status.stringValue = @"正在加载书籍正文，请稍候…";
     } else if ([message.body isEqual:@"ready"]) {
@@ -505,7 +513,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSString *js = @"(() => { const api=window.PaperlikeReader; const canvases=[...document.querySelectorAll('canvas')]; const c=canvases.find(x=>x.width>0&&x.height>0); const root=document.querySelector('.readerChapterContent'); let hash=0; for(const canvas of canvases){try{const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;for(let i=0;i<d.length;i+=16)hash=(Math.imul(hash,31)+d[i]+d[i+3])>>>0;}catch(_){}} return {width:c?.width||0,height:c?.height||0,hash,rootWidth:root?.getBoundingClientRect().width||0,...api.layoutState()}; })()";
     [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
         NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
-        BOOL ready = !error && ![r[@"reflowing"] boolValue] && [r[@"width"] doubleValue] > 0 && [r[@"hash"] unsignedIntValue] != 0;
+        BOOL ready = !error && ![r[@"reflowing"] boolValue] && [r[@"reportedState"] isEqual:@"ready"] && [r[@"width"] doubleValue] > 0 && [r[@"hash"] unsignedIntValue] != 0;
         if (stage == 1) ready = ready && [r[@"width"] doubleValue] < [self.layoutTestBaseline[@"width"] doubleValue] - 10;
         if (stage == 2) ready = ready && ![r[@"hash"] isEqual:self.layoutTestWide[@"hash"]];
         if (stage == 3) ready = ready && fabs([r[@"width"] doubleValue] - [self.layoutTestBaseline[@"width"] doubleValue]) < 2 && [r[@"margin"] doubleValue] == 0 && [r[@"lineHeight"] doubleValue] == 0;
