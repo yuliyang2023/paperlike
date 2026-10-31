@@ -44,6 +44,7 @@
 @property NSButton *marginMinus;
 @property NSButton *marginPlus;
 @property NSDictionary *baselineLayout;
+@property id outsideClickMonitor;
 @property (weak) NSView *readerView;
 @end
 
@@ -236,27 +237,55 @@
     return parts.URL;
 }
 - (void)presentInView:(NSView *)host readerView:(NSView *)reader query:(NSString *)query {
-    self.readerView = reader;
-    if (!self.view.superview) {
-        self.view.translatesAutoresizingMaskIntoConstraints = NO;
-        [host addSubview:self.view positioned:NSWindowAbove relativeTo:reader];
-        NSLayoutConstraint *preferred = [self.view.widthAnchor constraintEqualToAnchor:reader.widthAnchor multiplier:0.55];
-        preferred.priority = NSLayoutPriorityDefaultLow;
-        NSLayoutConstraint *minimum = [self.view.widthAnchor constraintGreaterThanOrEqualToConstant:620];
-        minimum.priority = NSLayoutPriorityDefaultHigh;
-        [NSLayoutConstraint activateConstraints:@[
-            [self.view.trailingAnchor constraintEqualToAnchor:reader.trailingAnchor constant:-16],
-            [self.view.topAnchor constraintEqualToAnchor:reader.topAnchor constant:16],
-            [self.view.bottomAnchor constraintEqualToAnchor:reader.bottomAnchor constant:-16],
-            [self.view.widthAnchor constraintLessThanOrEqualToAnchor:reader.widthAnchor constant:-32],
-            [self.view.widthAnchor constraintLessThanOrEqualToConstant:960], preferred, minimum
-        ]];
+    if (self.readerView != reader) {
+        if (self.readerView) [NSNotificationCenter.defaultCenter removeObserver:self name:NSViewFrameDidChangeNotification object:self.readerView];
+        self.readerView = reader; reader.postsFrameChangedNotifications = YES;
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(readerFrameChanged:) name:NSViewFrameDidChangeNotification object:reader];
     }
+    if (!self.view.superview) {
+        self.view.translatesAutoresizingMaskIntoConstraints = YES;
+        [host addSubview:self.view positioned:NSWindowAbove relativeTo:reader];
+    }
+    [self syncGeometry];
     [host layoutSubtreeIfNeeded];
+    if (!self.outsideClickMonitor) {
+        __weak WikiPanelController *weakSelf = self;
+        self.outsideClickMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown handler:^NSEvent *(NSEvent *event) {
+            return [weakSelf handleOutsideClick:event] ? nil : event;
+        }];
+    }
     if (query.length) { self.searchField.stringValue = query; [self submitSearch:nil]; }
 }
+- (void)readerFrameChanged:(NSNotification *)notification { (void)notification; [self syncGeometry]; }
+- (void)syncGeometry {
+    NSView *reader = self.readerView, *host = self.view.superview;
+    if (!reader || !host) return;
+    CGFloat zoom = [(WKWebView *)reader pageZoom];
+    CGFloat width = MIN(760 * zoom, MAX(0, NSWidth(reader.bounds) - 32 * zoom));
+    CGFloat inset = (NSHeight(reader.bounds) / zoom <= 400 ? 8 : 16) * zoom;
+    NSRect rect = NSMakeRect((NSWidth(reader.bounds)-width)/2, inset, width, MAX(0,NSHeight(reader.bounds)-2*inset));
+    self.view.frame = [reader convertRect:rect toView:host];
+}
+- (BOOL)handleOutsideClick:(NSEvent *)event {
+    NSWindow *window = self.view.window;
+    if (!window || !self.view.superview) return NO;
+    // The margin popover has its own AppKit window. Its controls belong to Wiki.
+    if (self.marginPopover.shown && event.window == self.marginPopover.contentViewController.view.window) return NO;
+    if (event.window != window) return NO;
+    NSPoint point = [self.view convertPoint:event.locationInWindow fromView:nil];
+    if (NSPointInRect(point, self.view.bounds)) return NO;
+    [self closePanel:nil];
+    // Match a dismissible overlay: the dismissing click must not turn a book page.
+    return YES;
+}
 - (void)closePanel:(id)sender {
-    (void)sender; [self.marginPopover close]; [self.view removeFromSuperview];
+    (void)sender;
+    if (self.outsideClickMonitor) { [NSEvent removeMonitor:self.outsideClickMonitor]; self.outsideClickMonitor = nil; }
+    [self.marginPopover close]; [self.view removeFromSuperview];
+}
+- (void)dealloc {
+    if (_outsideClickMonitor) [NSEvent removeMonitor:_outsideClickMonitor];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 - (void)loadWikiURL:(NSURL *)url {
     self.requestedURL = url;
@@ -389,15 +418,60 @@
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200*NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkDisplayTest]; });
             return;
         }
-        NSView *host = self.view.superview, *reader = self.readerView;
-        NSWindow *window = reader.window;
-        NSURL *bookURL = [(WKWebView *)reader URL];
-        if (!host || self.view.window != window) { fprintf(stderr, "WIKI embedded panel FAIL\n"); exit(11); }
-        [self closePanel:nil];
-        BOOL closed = !self.view.superview && reader.window == window && [[(WKWebView *)reader URL] isEqual:bookURL];
-        [self presentInView:host readerView:reader query:@""];
-        if (!closed || self.view.window != window) { fprintf(stderr, "WIKI close/reopen FAIL\n"); exit(11); }
-        fprintf(stdout, "WIKI EMBEDDED PANEL PASS · same window, close/reopen, book retained\n");
+        [self verifyMatchingAIGeometry:0 completion:^{
+            [self checkOutsideDismissal:0 completion:^{ [self finishDisplayTest:r]; }];
+        }];
+    }];
+}
+- (void)verifyMatchingAIGeometry:(NSUInteger)attempt completion:(void (^)(void))completion {
+    WKWebView *reader = (WKWebView *)self.readerView;
+    NSString *script = @"(() => {let p=document.querySelector('#paperlike-ai-geometry-test');if(!p){p=document.createElement('div');p.id='paperlike-ai-geometry-test';p.className='readerAIChatPanel';p.style.position='fixed';document.body.appendChild(p);}return p.getBoundingClientRect().toJSON();})()";
+    [reader evaluateJavaScript:script completionHandler:^(id value,NSError *error) {
+        NSRect rect = [self.view convertRect:self.view.bounds toView:reader];
+        CGFloat zoom = reader.pageZoom;
+        BOOL passed = !error && [value isKindOfClass:NSDictionary.class] &&
+            fabs([value[@"x"] doubleValue]*zoom - NSMinX(rect)) < 2 &&
+            fabs([value[@"width"] doubleValue]*zoom - NSWidth(rect)) < 2 &&
+            fabs([value[@"height"] doubleValue]*zoom - NSHeight(rect)) < 2 &&
+            fabs([value[@"y"] doubleValue]*zoom - (NSHeight(reader.bounds)-NSMaxY(rect))) < 2;
+        if (!passed && attempt < 20) { dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[self verifyMatchingAIGeometry:attempt+1 completion:completion];});return; }
+        [reader evaluateJavaScript:@"document.querySelector('#paperlike-ai-geometry-test')?.remove();true" completionHandler:nil];
+        if (!passed) {fprintf(stderr,"WIKI AI GEOMETRY FAIL %s native=%s zoom=%g\n",[value description].UTF8String,NSStringFromRect(rect).UTF8String,zoom);exit(11);}
+        fprintf(stdout,"WIKI AI GEOMETRY PASS · same center and size at current zoom\n");fflush(stdout);
+        completion();
+    }];
+}
+- (void)checkOutsideDismissal:(NSUInteger)step completion:(void (^)(void))completion {
+    NSView *host = self.view.superview, *reader = self.readerView;
+    NSWindow *window = reader.window;
+    if (!host || self.view.window != window || !self.outsideClickMonitor) { fprintf(stderr,"WIKI dismiss setup FAIL\n");exit(11); }
+    NSPoint point = step == 0 ? [self.view convertPoint:NSMakePoint(20,NSHeight(self.view.bounds)-30) toView:nil] : [reader convertPoint:NSMakePoint(4,NSHeight(reader.bounds)/2) toView:nil];
+    NSWindow *eventWindow = window;
+    if (step == 1) {
+        [self showMargin:nil];
+        NSView *popover = self.marginPopover.contentViewController.view;
+        eventWindow = popover.window;
+        point = [popover convertPoint:NSMakePoint(20,NSHeight(popover.bounds)-30) toView:nil];
+    }
+    NSEventType type = step == 3 ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown;
+    NSEvent *event = [NSEvent mouseEventWithType:type location:point modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:eventWindow.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1];
+    NSURL *bookURL = [(WKWebView *)reader URL];
+    [NSApp postEvent:event atStart:NO];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,150*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        BOOL shown = self.view.superview == host && self.outsideClickMonitor != nil;
+        BOOL closed = self.view.superview == nil && self.outsideClickMonitor == nil;
+        BOOL unchanged = [[(WKWebView *)reader URL] isEqual:bookURL];
+        if (!unchanged || (step < 2 ? !shown : !closed)) { fprintf(stderr,"WIKI outside click FAIL step=%lu\n",(unsigned long)step);exit(11); }
+        if (step == 1) [self.marginPopover close];
+        if (step >= 2) [self presentInView:host readerView:reader query:@""];
+        if (step < 3) [self checkOutsideDismissal:step+1 completion:completion];
+        else {
+            fprintf(stdout,"WIKI DISMISS PASS · inside/popover retained, outside left/right closed, reopen, book retained\n");fflush(stdout);
+            completion();
+        }
+    });
+}
+- (void)finishDisplayTest:(NSDictionary *)r {
         fprintf(stdout, "WIKI DISPLAY PASS · search, article, font/margins, navigation persistence, reset, URL checks\n%s\n", r.description.UTF8String); fflush(stdout);
         NSView *root = self.view;
         NSRect toolbarRect = NSMakeRect(0, NSHeight(root.bounds) - 172, NSWidth(root.bounds), 172);
@@ -416,6 +490,5 @@
             }
             exit(0);
         }];
-    }];
 }
 @end

@@ -316,6 +316,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
 - (void)setPageZoom:(double)value {
     self.zoom = fmin(1.8, fmax(0.8, value));
     self.webView.pageZoom = self.zoom;
+    [self.wikiPanelController syncGeometry];
     if (!self.selfTest) [NSUserDefaults.standardUserDefaults setDouble:self.zoom forKey:@"zoom"];
     [self updateControls];
 }

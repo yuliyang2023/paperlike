@@ -78,12 +78,13 @@
     html[data-paperlike-ai-ink="true"] :is([disabled], [aria-disabled="true"]) { opacity: 1 !important; border-style: dashed !important; }
   ` : `
     html body .readerAIChatPanel {
-      left: auto !important; right: 96px !important; top: 16px !important; bottom: 16px !important;
-      margin-left: 0 !important; width: 760px !important; max-width: calc(100vw - 120px) !important;
+      left: 50vw !important; right: auto !important; top: 16px !important; bottom: 16px !important;
+      transform: translateX(-50%) !important;
+      margin-left: 0 !important; width: 760px !important; max-width: calc(100vw - 32px) !important;
       box-sizing: border-box; font-size: 20px !important; border-radius: 10px !important;
     }
     html body .readerAIChatPanel .readerAIChatPanel {
-      position: static !important; inset: auto !important; margin: 0 !important;
+      position: static !important; inset: auto !important; margin: 0 !important; transform: none !important;
       width: 100% !important; max-width: 100% !important; height: 100% !important;
       border: 0 !important; box-shadow: none !important;
     }
@@ -106,7 +107,7 @@
       min-width: 56px !important; min-height: 56px !important;
     }
     @media (max-width: 700px) {
-      html body .readerAIChatPanel { right: 16px !important; max-width: calc(100vw - 32px) !important; }
+      html body .readerAIChatPanel { max-width: calc(100vw - 32px) !important; }
     }
     @media (max-height: 400px) {
       html body .readerAIChatPanel { top: 8px !important; bottom: 8px !important; }
