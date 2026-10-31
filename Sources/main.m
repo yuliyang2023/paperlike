@@ -13,9 +13,18 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 @property NSProgressIndicator *progress;
 @property BOOL ink;
 @property double zoom;
+@property double pageMargin;
+@property double lineSpacing;
+@property double defaultLineSpacing;
+@property NSPopover *layoutPopover;
+@property NSTextField *layoutValue;
+@property NSString *layoutKind;
 @property BOOL selfTest;
 @property BOOL smokeTest;
 @property BOOL readerTest;
+@property BOOL layoutTest;
+@property NSDictionary *layoutTestBaseline;
+@property NSDictionary *layoutTestWide;
 @property BOOL loadFailed;
 @property id keyMonitor;
 - (void)home:(id)sender;
@@ -29,6 +38,11 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)moveToPaperlike:(id)sender;
 - (void)fullScreen:(id)sender;
 - (void)help:(id)sender;
+- (void)showMargins:(id)sender;
+- (void)showLineSpacing:(id)sender;
+- (void)decreaseLayout:(id)sender;
+- (void)increaseLayout:(id)sender;
+- (void)resetLayout:(id)sender;
 @end
 
 @implementation ReaderApp
@@ -85,13 +99,19 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     self.selfTest = [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
-    self.readerTest = [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
+    self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
+    self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults registerDefaults:@{@"ink": @YES, @"zoom": @1.0}];
+    [defaults registerDefaults:@{@"ink": @YES, @"zoom": @1.0, @"pageMargin": @0, @"lineSpacing": @0}];
     self.ink = [defaults boolForKey:@"ink"];
     if (self.readerTest) self.ink = YES;
     self.zoom = fmin(1.8, fmax(0.8, [defaults doubleForKey:@"zoom"]));
+    self.pageMargin = fmin(200, fmax(-60, [defaults doubleForKey:@"pageMargin"]));
+    double spacing = [defaults doubleForKey:@"lineSpacing"];
+    self.lineSpacing = spacing > 0 ? fmin(3, fmax(1.2, spacing)) : 0;
+    self.defaultLineSpacing = 1.5;
+    if (self.selfTest || self.smokeTest) { self.pageMargin = 0; self.lineSpacing = 0; }
     [self buildMenus];
     self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1100, 800)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
@@ -115,7 +135,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSURL *scriptURL = [NSBundle.mainBundle URLForResource:@"ink" withExtension:@"js"];
     NSString *script = [NSString stringWithContentsOfURL:scriptURL encoding:NSUTF8StringEncoding error:nil];
     if (!script) { fprintf(stderr, "Missing ink.js\n"); exit(1); }
-    NSString *initialScript = [script stringByAppendingFormat:@"\nwindow.PaperlikeReader.setInk(%@);", self.ink ? @"true" : @"false"];
+    NSString *initialScript = [script stringByAppendingFormat:@"\nwindow.PaperlikeReader.setInk(%@);\nwindow.PaperlikeReader.setLayout(%g, %g);", self.ink ? @"true" : @"false", self.pageMargin, self.lineSpacing];
     [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:initialScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES]];
     self.webView = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:config];
     self.webView.navigationDelegate = self;
@@ -130,11 +150,13 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSButton *smaller = [self button:@"−" action:@selector(zoomOut:) tooltip:@"缩小页面（⌘−）"];
     self.zoomLabel = [self button:@"100%" action:@selector(resetZoom:) tooltip:@"重置页面缩放（⌘0）；正文字号可在微信读书内设置"];
     NSButton *larger = [self button:@"＋" action:@selector(zoomIn:) tooltip:@"放大页面（⌘+）"];
+    NSButton *margins = [self button:@"页边距" action:@selector(showMargins:) tooltip:@"调节正文左右留白，可恢复默认"];
+    NSButton *lineSpacing = [self button:@"行距" action:@selector(showLineSpacing:) tooltip:@"调节正文行间距，可恢复默认"];
     self.inkButton = [self button:@"墨水模式 ✓" action:@selector(toggleInk:) tooltip:@"灰度、高对比、减少动画（⌘I）"];
     [self.inkButton.widthAnchor constraintGreaterThanOrEqualToConstant:176].active = YES;
     NSButton *screen = [self button:@"移到 Paperlike" action:@selector(moveToPaperlike:) tooltip:@"定位已连接的 Paperlike 显示器（⌘P）"];
     NSButton *full = [self button:@"全屏" action:@selector(fullScreen:) tooltip:@"切换全屏（⌘F）"];
-    NSStackView *toolbar = [NSStackView stackViewWithViews:@[home, reload, previous, next, smaller, self.zoomLabel, larger, self.inkButton, screen, full]];
+    NSStackView *toolbar = [NSStackView stackViewWithViews:@[home, reload, previous, next, smaller, self.zoomLabel, larger, margins, lineSpacing, self.inkButton, screen, full]];
     toolbar.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     toolbar.alignment = NSLayoutAttributeCenterY;
     toolbar.spacing = 12;
@@ -196,7 +218,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         [self placeOnPaperlike:NO];
         if (self.readerTest) [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://weread.qq.com/web/reader/1f5322605bfe8f1f5105803"]]];
         else [self home:nil];
-        if (self.smokeTest) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 45 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SMOKE timeout\n"); exit(5); });
+        if (self.smokeTest) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (self.layoutTest ? 90 : 45) * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SMOKE timeout\n"); exit(5); });
     }
 }
 - (void)updateControls {
@@ -226,6 +248,94 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)zoomIn:(id)sender { (void)sender; [self setPageZoom:self.zoom + 0.1]; }
 - (void)zoomOut:(id)sender { (void)sender; [self setPageZoom:self.zoom - 0.1]; }
 - (void)resetZoom:(id)sender { (void)sender; [self setPageZoom:1]; }
+- (void)updateLayoutValue {
+    if ([self.layoutKind isEqualToString:@"margin"]) {
+        self.layoutValue.stringValue = fabs(self.pageMargin) < 0.1 ? @"默认" :
+            [NSString stringWithFormat:@"%@ %.0f px", self.pageMargin > 0 ? @"加宽" : @"收窄", fabs(self.pageMargin)];
+    } else {
+        self.layoutValue.stringValue = self.lineSpacing == 0 ? @"默认" : [NSString stringWithFormat:@"%.1f 倍", self.lineSpacing];
+    }
+}
+- (void)showLayout:(NSString *)kind sender:(NSButton *)sender {
+    [self.layoutPopover close];
+    self.layoutKind = kind;
+    [self.webView evaluateJavaScript:@"window.PaperlikeReader?.layoutState()" completionHandler:^(id result, NSError *error) {
+        if (![self.layoutKind isEqualToString:kind]) return;
+        if (error || ![result isKindOfClass:NSDictionary.class] || ![result[@"reader"] boolValue]) {
+            self.status.stringValue = @"请先打开一本书，再调节页边距和行距。";
+            return;
+        }
+        self.pageMargin = [result[@"effectiveMargin"] doubleValue];
+        self.lineSpacing = [result[@"lineHeight"] doubleValue];
+        self.defaultLineSpacing = [result[@"defaultLineHeight"] doubleValue];
+        BOOL margin = [kind isEqualToString:@"margin"];
+        NSTextField *title = [NSTextField labelWithString:margin ? @"页边距" : @"正文行距"];
+        title.font = [NSFont systemFontOfSize:22 weight:NSFontWeightSemibold];
+        self.layoutValue = [NSTextField labelWithString:@"默认"];
+        self.layoutValue.font = [NSFont systemFontOfSize:24 weight:NSFontWeightSemibold];
+        self.layoutValue.alignment = NSTextAlignmentCenter;
+        [self.layoutValue.widthAnchor constraintEqualToConstant:156].active = YES;
+        NSButton *minus = [self button:@"−" action:@selector(decreaseLayout:) tooltip:margin ? @"减少左右留白" : @"缩小行间距"];
+        NSButton *plus = [self button:@"＋" action:@selector(increaseLayout:) tooltip:margin ? @"增加左右留白" : @"增大行间距"];
+        NSStackView *row = [NSStackView stackViewWithViews:@[minus, self.layoutValue, plus]];
+        row.spacing = 12;
+        row.alignment = NSLayoutAttributeCenterY;
+        NSTextField *hint = [NSTextField labelWithString:margin ? @"调整正文左右留白，每次 20 px" : @"每次调整 0.1 倍，数值越大越宽松"];
+        hint.font = [NSFont systemFontOfSize:15];
+        hint.textColor = NSColor.blackColor;
+        NSButton *reset = [self button:@"恢复默认" action:@selector(resetLayout:) tooltip:@"恢复微信读书原来的排版"];
+        NSStackView *content = [NSStackView stackViewWithViews:@[title, row, hint, reset]];
+        content.orientation = NSUserInterfaceLayoutOrientationVertical;
+        content.alignment = NSLayoutAttributeCenterX;
+        content.spacing = 12;
+        content.edgeInsets = NSEdgeInsetsMake(16, 16, 16, 16);
+        NSSize size = content.fittingSize;
+        content.frame = NSMakeRect(0, 0, size.width, size.height);
+        NSViewController *controller = [[NSViewController alloc] init];
+        controller.view = content;
+        self.layoutPopover = [[NSPopover alloc] init];
+        self.layoutPopover.behavior = NSPopoverBehaviorTransient;
+        self.layoutPopover.animates = NO;
+        self.layoutPopover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        self.layoutPopover.contentViewController = controller;
+        self.layoutPopover.contentSize = size;
+        [self updateLayoutValue];
+        [self.layoutPopover showRelativeToRect:sender.bounds ofView:sender preferredEdge:NSRectEdgeMinY];
+    }];
+}
+- (void)showMargins:(id)sender { [self showLayout:@"margin" sender:sender]; }
+- (void)showLineSpacing:(id)sender { [self showLayout:@"line" sender:sender]; }
+- (void)applyPageMargin:(double)margin lineSpacing:(double)spacing {
+    NSString *js = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", margin, spacing];
+    [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        if (error || ![result isKindOfClass:NSDictionary.class] || ![result[@"applied"] boolValue]) {
+            self.status.stringValue = @"排版尚未就绪，请等待正文加载完成后再试。";
+            return;
+        }
+        self.pageMargin = [result[@"effectiveMargin"] doubleValue];
+        self.lineSpacing = [result[@"lineHeight"] doubleValue];
+        [NSUserDefaults.standardUserDefaults setDouble:self.pageMargin forKey:@"pageMargin"];
+        [NSUserDefaults.standardUserDefaults setDouble:self.lineSpacing forKey:@"lineSpacing"];
+        [self updateLayoutValue];
+        self.status.stringValue = @"正在重新排版正文… · 设置已保存";
+    }];
+}
+- (void)changeLayout:(double)direction {
+    if ([self.layoutKind isEqualToString:@"margin"]) {
+        [self applyPageMargin:fmin(200, fmax(-60, self.pageMargin + direction * 20)) lineSpacing:self.lineSpacing];
+    } else {
+        double current = self.lineSpacing == 0 ? self.defaultLineSpacing : self.lineSpacing;
+        double spacing = fmin(3, fmax(1.2, round((current + direction * 0.1) * 10) / 10));
+        [self applyPageMargin:self.pageMargin lineSpacing:spacing];
+    }
+}
+- (void)decreaseLayout:(id)sender { (void)sender; [self changeLayout:-1]; }
+- (void)increaseLayout:(id)sender { (void)sender; [self changeLayout:1]; }
+- (void)resetLayout:(id)sender {
+    (void)sender;
+    BOOL margin = [self.layoutKind isEqualToString:@"margin"];
+    [self applyPageMargin:margin ? 0 : self.pageMargin lineSpacing:margin ? self.lineSpacing : 0];
+}
 - (void)toggleInk:(id)sender {
     (void)sender;
     self.ink = !self.ink;
@@ -339,6 +449,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSString *js = [NSString stringWithFormat:@"window.PaperlikeReader && window.PaperlikeReader.setInk(%@)", self.ink ? @"true" : @"false"];
     [webView evaluateJavaScript:js completionHandler:nil];
     self.status.stringValue = [webView.URL.path hasPrefix:@"/web/reader/"] ? @"页面已连接，正在加载正文…" : @"就绪 · 在网页内登录并选择书籍";
+    NSString *layoutJS = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", self.pageMargin, self.lineSpacing];
+    [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
     if (self.selfTest) [self runSelfTest];
     if (self.readerTest) { [self checkReaderTest:0 advanced:NO]; return; }
@@ -373,6 +485,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         BOOL passed = ready && advanced && [r[@"painted"] boolValue] && [r[@"whiteTheme"] boolValue] && [r[@"background"] isEqual:@"rgb(255, 255, 255)"];
         fprintf(stdout, "READER %s after %lu checks\n%s\n", passed ? "PASS" : "FAIL", (unsigned long)attempt + 1, r.description.UTF8String);
         fflush(stdout);
+        if (self.layoutTest && passed) { [self checkLayoutTest:0 attempt:0]; return; }
         WKSnapshotConfiguration *snapshot = [[WKSnapshotConfiguration alloc] init];
         snapshot.snapshotWidth = @1100;
         [self.webView takeSnapshotWithConfiguration:snapshot completionHandler:^(NSImage *image, NSError *snapshotError) {
@@ -385,6 +498,31 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
             }
             fflush(stdout);
             exit(passed ? 0 : 6);
+        }];
+    }];
+}
+- (void)checkLayoutTest:(NSUInteger)stage attempt:(NSUInteger)attempt {
+    NSString *js = @"(() => { const api=window.PaperlikeReader; const canvases=[...document.querySelectorAll('canvas')]; const c=canvases.find(x=>x.width>0&&x.height>0); const root=document.querySelector('.readerChapterContent'); let hash=0; for(const canvas of canvases){try{const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;for(let i=0;i<d.length;i+=16)hash=(Math.imul(hash,31)+d[i]+d[i+3])>>>0;}catch(_){}} return {width:c?.width||0,height:c?.height||0,hash,rootWidth:root?.getBoundingClientRect().width||0,...api.layoutState()}; })()";
+    [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
+        BOOL ready = !error && ![r[@"reflowing"] boolValue] && [r[@"width"] doubleValue] > 0 && [r[@"hash"] unsignedIntValue] != 0;
+        if (stage == 1) ready = ready && [r[@"width"] doubleValue] < [self.layoutTestBaseline[@"width"] doubleValue] - 10;
+        if (stage == 2) ready = ready && ![r[@"hash"] isEqual:self.layoutTestWide[@"hash"]];
+        if (stage == 3) ready = ready && fabs([r[@"width"] doubleValue] - [self.layoutTestBaseline[@"width"] doubleValue]) < 2 && [r[@"margin"] doubleValue] == 0 && [r[@"lineHeight"] doubleValue] == 0;
+        if (!ready && attempt < 30) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkLayoutTest:stage attempt:attempt + 1]; });
+            return;
+        }
+        if (!ready) { fprintf(stderr, "LAYOUT FAIL stage %lu: %s\n", (unsigned long)stage, r.description.UTF8String); exit(7); }
+        fprintf(stdout, "LAYOUT stage %lu: %s\n", (unsigned long)stage, r.description.UTF8String); fflush(stdout);
+        if (stage == 3) { fprintf(stdout, "LAYOUT PASS: margins, line spacing, reset\n"); fflush(stdout); exit(0); }
+        if (stage == 0) self.layoutTestBaseline = r;
+        if (stage == 1) self.layoutTestWide = r;
+        NSString *change = stage == 0 ? @"window.PaperlikeReader.setLayout(60, 2.4)" : stage == 1 ? @"window.PaperlikeReader.setLayout(60, 1.4)" : @"window.PaperlikeReader.setLayout(0, 0)";
+        [self.webView evaluateJavaScript:change completionHandler:^(id value, NSError *changeError) {
+            (void)value;
+            if (changeError) { fprintf(stderr, "Layout update failed\n"); exit(7); }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkLayoutTest:stage + 1 attempt:0]; });
         }];
     }];
 }

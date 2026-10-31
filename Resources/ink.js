@@ -127,6 +127,120 @@
         .wr_reader_note_panel_footer_button) { min-width: 48px !important; min-height: 48px !important; }
   `;
   (document.head || document.documentElement).appendChild(controlsStyle);
+  const layoutStyle = document.createElement('style');
+  layoutStyle.id = 'paperlike-layout-style';
+  (document.head || document.documentElement).appendChild(layoutStyle);
+  const pulseStyle = document.createElement('style');
+  pulseStyle.id = 'paperlike-layout-reflow';
+  (document.head || document.documentElement).appendChild(pulseStyle);
+  const layout = {margin: 0, lineHeight: 0};
+  let layoutRoot = null;
+  let layoutMode = null;
+  let defaultLineHeight = 1.5;
+  let effectiveMargin = 0;
+  let reflowTimer = null;
+  let pulseTimer = null;
+  let pendingReflow = false;
+  const ownResizeEvents = new WeakSet();
+  const dispatchResize = () => {
+    const event = new Event('resize');
+    ownResizeEvents.add(event);
+    window.dispatchEvent(event);
+  };
+  const readerReady = () => [...document.querySelectorAll('.renderTarget_pager_button_right, .readerFooter_button')]
+    .some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+  const queueReflow = () => {
+    pendingReflow = true;
+    if (!readerReady() || reflowTimer !== null || pulseTimer !== null) return;
+    reflowTimer = setTimeout(() => {
+      reflowTimer = null;
+      if (!readerReady()) return;
+      pendingReflow = false;
+      // Use the reader's normal resize/recollect path to preserve pagination
+      // and reading position; resizing the finished bitmap would distort text.
+      if (document.querySelector('.wr_horizontalReader')) {
+        dispatchResize();
+        // Shrinking line height can leave the previous page index past the
+        // last rendered page. A second layout pass normalizes that index.
+        pulseTimer = setTimeout(() => {
+          pulseTimer = null;
+          dispatchResize();
+        }, 900);
+      } else {
+        // The vertical reader ignores resize notifications when width has not
+        // changed. Briefly change the measured width, then restore it exactly.
+        const root = document.querySelector('.readerChapterContent');
+        if (!root) return;
+        const width = parseFloat(getComputedStyle(root).width);
+        pulseStyle.textContent = `.readerChapterContent { width: ${Math.max(180, width - 2)}px !important; }`;
+        dispatchResize();
+        pulseTimer = setTimeout(() => {
+          pulseStyle.textContent = '';
+          pulseTimer = null;
+          pendingReflow = false;
+          dispatchResize();
+        }, 650);
+      }
+    }, 180);
+  };
+  const applyLayout = (reflow = false) => {
+    const root = document.querySelector('.readerChapterContent');
+    if (!root || !location.pathname.startsWith('/web/reader/')) return false;
+    const horizontal = !!document.querySelector('.wr_horizontalReader');
+    // Measure the website's current responsive width without our override.
+    // This avoids hard-coding desktop widths or accumulating adjustments.
+    layoutStyle.disabled = true;
+    pulseStyle.disabled = true;
+    const natural = getComputedStyle(root);
+    const width = parseFloat(natural.width);
+    const padding = parseFloat(natural.paddingLeft) + parseFloat(natural.paddingRight);
+    const fontSize = parseFloat(natural.fontSize);
+    const source = document.querySelector('#preRenderContent, #preRenderContents') || root;
+    const sourceStyle = getComputedStyle(source);
+    const ratio = parseFloat(sourceStyle.lineHeight) / (parseFloat(sourceStyle.fontSize) || fontSize);
+    if (layoutRoot !== root && layout.lineHeight === 0 && Number.isFinite(ratio)) defaultLineHeight = Math.min(3, Math.max(1.2, ratio));
+    layoutStyle.disabled = false;
+    pulseStyle.disabled = false;
+    if (!Number.isFinite(width) || width < 100) return false;
+    const activeCanvases = [...root.querySelectorAll('.wr_canvasContainer canvas')].filter(canvas =>
+      canvas.getClientRects().length && canvas.getBoundingClientRect().width > 0);
+    const dualPage = horizontal && (activeCanvases.length ? activeCanvases.length > 1 : width >= 800);
+    const minimum = Math.min(width, dualPage ? 720 : 280);
+    const maximum = Math.max(width, innerWidth - 128 - padding);
+    const adjusted = Math.max(minimum, Math.min(maximum, width - layout.margin * 2));
+    effectiveMargin = Math.round((width - adjusted) / 2);
+    const rules = [];
+    if (layout.margin !== 0) rules.push(`.readerChapterContent { width: ${adjusted}px !important; }`);
+    if (layout.lineHeight !== 0) rules.push(`
+      html body #preRenderContent, html body #preRenderContent *,
+      html body #preRenderContents, html body #preRenderContents * {
+        line-height: ${layout.lineHeight} !important;
+      }`);
+    const css = rules.join('\n');
+    if (layoutStyle.textContent !== css) layoutStyle.textContent = css;
+    layoutRoot = root;
+    layoutMode = horizontal;
+    if (reflow) queueReflow();
+    return true;
+  };
+  const syncLayout = () => {
+    const root = document.querySelector('.readerChapterContent');
+    const horizontal = !!document.querySelector('.wr_horizontalReader');
+    if (root && (root !== layoutRoot || horizontal !== layoutMode)) {
+      applyLayout(layout.margin !== 0 || layout.lineHeight !== 0);
+    }
+    if (pendingReflow && readerReady()) queueReflow();
+  };
+  window.addEventListener('resize', event => {
+    if (ownResizeEvents.has(event)) return;
+    applyLayout(layout.margin !== 0 || layout.lineHeight !== 0);
+  });
+  const layoutState = () => ({
+    reader: location.pathname.startsWith('/web/reader/') && !!document.querySelector('.readerChapterContent'),
+    margin: layout.margin, effectiveMargin, lineHeight: layout.lineHeight,
+    defaultLineHeight, horizontal: !!document.querySelector('.wr_horizontalReader'),
+    reflowing: pendingReflow || reflowTimer !== null || pulseTimer !== null
+  });
   const syncFontSize = () => {
     const wrapper = document.querySelector('.font-panel-content-size-wrapper');
     if (!wrapper) return;
@@ -160,7 +274,7 @@
   };
   const controlsObserver = new MutationObserver(() => {
     if (fontSizeTimer !== null) return;
-    fontSizeTimer = setTimeout(() => { fontSizeTimer = null; syncFontSize(); reportReaderState(); }, 50);
+    fontSizeTimer = setTimeout(() => { fontSizeTimer = null; syncFontSize(); syncLayout(); reportReaderState(); }, 50);
   });
   controlsObserver.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style']});
   syncFontSize();
@@ -185,6 +299,17 @@
     themeTimer = setTimeout(() => { themeTimer = null; ensureLightTheme(); }, 80);
   });
   window.PaperlikeReader = {
+    layoutState,
+    setLayout(margin, lineHeight) {
+      const nextMargin = Math.max(-60, Math.min(200, Number(margin) || 0));
+      const spacing = Number(lineHeight) || 0;
+      const nextLineHeight = spacing === 0 ? 0 : Math.max(1.2, Math.min(3, spacing));
+      const changed = nextMargin !== layout.margin || nextLineHeight !== layout.lineHeight;
+      layout.margin = nextMargin;
+      layout.lineHeight = nextLineHeight;
+      const applied = applyLayout(changed);
+      return {...layoutState(), applied};
+    },
     reportState() { reportReaderState(true); },
     setInk(enabled) {
       document.documentElement.dataset.paperlikeInk = String(Boolean(enabled));
