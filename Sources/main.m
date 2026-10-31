@@ -409,7 +409,7 @@ static NSButton *ButtonForAction(NSView *view, SEL action) {
     [self.webView evaluateJavaScript:js completionHandler:nil];
     [self updateControls];
     self.status.stringValue = self.ink ? @"墨水模式已开启 · 灰度、高对比、减少动画" : @"已恢复网页原有显示";
-    if (self.ink) {
+    if (self.ink && !self.selfTest) {
         NSURL *lightURL = [self lightReaderURL:self.webView.URL];
         if (lightURL) [self.webView loadRequest:[NSURLRequest requestWithURL:lightURL]];
     }
