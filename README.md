@@ -20,6 +20,8 @@
 - **行距**：顶部“行距”按钮调整正文行高，每次 0.1 倍，范围为 1.2–3.0 倍。两项均支持“恢复默认”，设置保存在本机，支持横向翻页与上下滚动模式。调整会触发官网重新排版，需稍候正文重绘完成。
 - **选文弹层**：选中文字后的“复制、马克笔、波浪线、直线、写想法、AI 问书”等工具条采用 20 CSS 像素大字、至少 88 × 80 的按钮和黑色实线边框。白底黑字增强墨水屏显示，选区增加边界；划线样式和颜色选项也增加点击面积。弹层靠近窗口边缘时自动移回可见范围，窄窗口自动分两行显示。
 
+- **AI 问书**：聊天正文和推荐问题放大至 20 CSS 像素，引用信息 18 像素，输入框 22 像素，发送按钮 56 × 56；墨水模式采用白底黑字、实线边框和清晰的禁用状态。适配独立聊天子页面，长回答保持滚动，输入框固定可见。
+
 快捷键：`⌘[` / `⌘]` 翻屏，`⌘+` / `⌘−` 缩放，`⌘0` 重置，`⌘I` 墨水模式，`⌘P` 移到 Paperlike，`⌘F` 全屏，`⌘H` 首页，`⌘R` 重载。
 
 登录状态由本机 WebKit 保存；本项目没有远程后端、遥测、账号采集或书籍导出功能。书籍权限、付费内容、书架与进度同步由微信读书处理。应用不会修改显示器分辨率或刷新率；硬件清屏和刷新模式需使用显示器自身按键。
@@ -32,6 +34,7 @@
 bash build.sh
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --self-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --selection-test
+"build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --ai-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --smoke-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --reader-test
 "build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader" --layout-test
@@ -72,3 +75,5 @@ bash scripts/package.sh
 0.1.5 增加原生页边距和行距面板。通过正文容器宽度、预排版行高及官网 resize 重排路径更新画布，不拉伸已绘制的文字。上下滚动模式会短暂改变正文宽度以触发重排，随后恢复到设置值。该适配依赖当前官网的排版结构；固定版式、扫描图片类书籍的图内文字行距无法单独调整。
 
 0.1.6 修复“正在重新排版正文”提示不消失的问题：排版状态独立跟踪定时器和正文就绪状态，无需等待 DOM 变化；完成后恢复“正文已就绪”，20 秒仍未完成时停止忙碌提示并显示重试建议。排版回归测试同时验证完成状态。
+
+`--ai-test` 使用官网 AI 面板及聊天 iframe 结构的离线页面，验证父页面和子页面样式注入、问答与引用字号、黑白边框、滚动和输入区布局、推荐问题点击，以及墨水模式开关同步。GitHub Actions 同时运行；不向 AI 服务发送问题，不验证登录后的实际问答。

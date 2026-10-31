@@ -427,6 +427,7 @@
     reportState() { reportReaderState(true); },
     setInk(enabled) {
       document.documentElement.dataset.paperlikeInk = String(Boolean(enabled));
+      window.PaperlikeAI?.setInk(enabled);
       observer.disconnect();
       if (themeTimer !== null) { clearTimeout(themeTimer); themeTimer = null; }
       if (enabled) {

@@ -22,6 +22,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 @property BOOL selfTest;
 @property BOOL selectionTest;
 @property BOOL selectionNarrowTest;
+@property BOOL aiTest;
+@property BOOL aiThemeTested;
 @property BOOL smokeTest;
 @property BOOL readerTest;
 @property BOOL layoutTest;
@@ -101,7 +103,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     self.selectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
-    self.selfTest = self.selectionTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    self.aiTest = [NSProcessInfo.processInfo.arguments containsObject:@"--ai-test"];
+    self.selfTest = self.selectionTest || self.aiTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
     self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
@@ -140,6 +143,10 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     if (!script) { fprintf(stderr, "Missing ink.js\n"); exit(1); }
     NSString *initialScript = [script stringByAppendingFormat:@"\nwindow.PaperlikeReader.setInk(%@);\nwindow.PaperlikeReader.setLayout(%g, %g);", self.ink ? @"true" : @"false", self.pageMargin, self.lineSpacing];
     [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:initialScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES]];
+    NSString *aiScript = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"ai" withExtension:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!aiScript) { fprintf(stderr, "Missing ai.js\n"); exit(1); }
+    NSString *initialAIScript = [aiScript stringByAppendingFormat:@"\nwindow.PaperlikeAI?.setInk(%@);", self.ink ? @"true" : @"false"];
+    [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:initialAIScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:NO]];
     self.webView = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:config];
     self.webView.navigationDelegate = self;
     self.webView.UIDelegate = self;
@@ -216,12 +223,13 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     ]];
     [self updateControls];
     if (self.selfTest) {
-        if (self.selectionTest) {
+        if (self.selectionTest || self.aiTest) {
             [self.window makeKeyAndOrderFront:nil];
             [NSApp activateIgnoringOtherApps:YES];
         }
         NSString *fixture = @"<!doctype html><html><head><meta charset='utf-8'></head><body><h1>墨读 · 显示测试</h1><p>Paperlike 2200 × 1650</p><div style='height:3000px'>阅读测试正文</div></body></html>";
         if (self.selectionTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"selection-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
+        if (self.aiTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"ai-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         [self.webView loadHTMLString:fixture baseURL:[NSURL URLWithString:@"https://weread.qq.com/web/reader/test"]];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
     } else {
@@ -472,6 +480,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSString *layoutJS = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", self.pageMargin, self.lineSpacing];
     [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
+    if (self.aiTest) { [self checkAITest:0]; return; }
     if (self.selectionTest) { [self checkSelectionTest:0]; return; }
     if (self.selfTest) [self runSelfTest];
     if (self.readerTest) { [self checkReaderTest:0 advanced:NO]; return; }
@@ -580,7 +589,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 }
 - (void)checkSelectionTest:(NSUInteger)attempt {
     if (attempt == 0) fprintf(stdout, "Selection test: narrow=%d window=%.0fx%.0f web=%.0fx%.0f zoom=%.1f\n", self.selectionNarrowTest, self.window.contentView.bounds.size.width, self.window.contentView.bounds.size.height, self.webView.bounds.size.width, self.webView.bounds.size.height, self.webView.pageZoom);
-    NSString *js = @"(() => {const menu=document.querySelector('.reader_toolbar_container');if(!menu)return {passed:false};const rect=menu.getBoundingClientRect(),style=getComputedStyle(menu);const buttons=[...menu.querySelectorAll('.toolbarItem')].map(button=>{const r=button.getBoundingClientRect();const text=getComputedStyle(button.querySelector('.toolbarItem_text'));return {height:r.height,width:r.width,font:parseFloat(text.fontSize),color:text.color,hit:button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};});const inBounds=rect.left>=15&&rect.top>=15&&rect.right<=innerWidth-15&&rect.bottom<=innerHeight-15;const white=style.backgroundColor==='rgb(255, 255, 255)';const border=parseFloat(style.borderTopWidth)>=2&&style.borderTopColor==='rgb(0, 0, 0)';return {passed:inBounds&&white&&border&&buttons.length===6&&buttons.every(b=>b.height>=80&&b.width>=88&&b.font>=20&&b.color==='rgb(0, 0, 0)'&&b.hit),inBounds,white,border,buttons,viewport:[innerWidth,innerHeight],rect:rect.toJSON(),translation:style.translate};})()";
+    NSString *js = @"(() => {const menu=document.querySelector('.reader_toolbar_container');if(!menu)return {passed:false};const rect=menu.getBoundingClientRect(),style=getComputedStyle(menu);const buttons=[...menu.querySelectorAll('.toolbarItem')].map(button=>{const r=button.getBoundingClientRect();const text=getComputedStyle(button.querySelector('.toolbarItem_text'));return {height:r.height,width:r.width,font:parseFloat(text.fontSize),color:text.color,hit:button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};});const inBounds=rect.left>=15&&rect.top>=15&&rect.right<=innerWidth-15&&rect.bottom<=innerHeight-15;const white=style.backgroundColor==='rgb(255, 255, 255)';const border=parseFloat(style.borderTopWidth)>=1.5&&style.borderTopColor==='rgb(0, 0, 0)';return {passed:inBounds&&white&&border&&buttons.length===6&&buttons.every(b=>b.height>=79.9&&b.width>=87.9&&b.font>=20&&b.color==='rgb(0, 0, 0)'&&b.hit),inBounds,white,border,buttons,viewport:[innerWidth,innerHeight],rect:rect.toJSON(),translation:style.translate};})()";
     [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
         NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
         BOOL passed = !error && [r[@"passed"] boolValue];
@@ -611,6 +620,41 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
                 fprintf(stdout, "Snapshot: %s\n", path.UTF8String); fflush(stdout);
             }
             exit(passed ? 0 : 8);
+        }];
+    }];
+}
+- (void)checkAITest:(NSUInteger)attempt {
+    NSString *js = @"(() => {const frame=document.querySelector('.readerAIChatPanel_frame'),d=frame?.contentDocument;if(!d?.querySelector('.UserMessage_text__test')||!frame.contentWindow.PaperlikeAI)return {passed:false,frameReady:false};const cs=x=>getComputedStyle(x),fc=x=>frame.contentWindow.getComputedStyle(x);const input=document.querySelector('.readerAIChatPanel_footer_textarea'),send=document.querySelector('.readerAIChatPanel_footer_sendButton'),answer=d.querySelector('[class*=markdown-body]'),question=d.querySelector('[class*=UserMessage_text]'),reference=d.querySelector('[class*=UserMessage_reference]'),suggestion=d.querySelector('[class*=ChatSuggestion_question_item]'),scroll=d.querySelector('[class*=ChatSessions_container]');const panel=document.querySelector('.readerAIChatPanel').getBoundingClientRect(),ir=input.getBoundingClientRect(),fr=frame.getBoundingClientRect();const font=parseFloat(fc(answer).fontSize),inputFont=parseFloat(cs(input).fontSize),sendSize=send.getBoundingClientRect().width;const black=fc(answer).color==='rgb(0, 0, 0)'&&cs(input).color==='rgb(0, 0, 0)';const border=parseFloat(fc(suggestion).borderTopWidth)>=1.5;const frameInk=d.documentElement.dataset.paperlikeAiInk==='true';const bounds=panel.left>=0&&panel.right<=innerWidth+1&&panel.top>=0&&panel.bottom<=innerHeight+1&&fr.height>80&&ir.top>=fr.bottom-2&&ir.bottom<=panel.bottom;scroll.scrollTop=scroll.scrollHeight;const scrollable=scroll.scrollHeight>scroll.clientHeight&&scroll.scrollTop>0;suggestion.click();const clicked=d.body.dataset.testClicked;return {passed:font>=20&&inputFont>=22&&sendSize>=55.9&&black&&border&&frameInk&&bounds&&scrollable&&Number(clicked)>0,font,inputFont,sendSize,black,border,borderStyle:fc(suggestion).borderTopStyle,borderWidth:fc(suggestion).borderTopWidth,frameInk,bounds,scrollable,clicked,questionFont:parseFloat(fc(question).fontSize),referenceFont:parseFloat(fc(reference).fontSize)};})()";
+    [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
+        BOOL passed = !error && [r[@"passed"] boolValue];
+        if (!passed && attempt < 30) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkAITest:attempt + 1]; });
+            return;
+        }
+        if (passed && !self.aiThemeTested) {
+            self.aiThemeTested = YES;
+            [self.webView evaluateJavaScript:@"window.PaperlikeReader.setInk(false)" completionHandler:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                [self.webView evaluateJavaScript:@"(() => {const d=document.querySelector('iframe').contentDocument;return d.documentElement.dataset.paperlikeAiInk==='false'&&getComputedStyle(d.querySelector('[class*=markdown-body]')).fontSize==='20px';})()" completionHandler:^(id value, NSError *themeError) {
+                    if (themeError || ![value boolValue]) { fprintf(stderr, "AI THEME FAIL\n"); exit(9); }
+                    [self.webView evaluateJavaScript:@"window.PaperlikeReader.setInk(true)" completionHandler:nil];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkAITest:0]; });
+                }];
+            });
+            return;
+        }
+        fprintf(stdout, "AI DISPLAY %s\n%s\n", passed ? "PASS" : "FAIL", r.description.UTF8String); fflush(stdout);
+        WKSnapshotConfiguration *snapshot = [[WKSnapshotConfiguration alloc] init];
+        snapshot.snapshotWidth = @1100;
+        [self.webView takeSnapshotWithConfiguration:snapshot completionHandler:^(NSImage *image, NSError *snapshotError) {
+            if (image && !snapshotError) {
+                NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+                NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"paperlike-ai-panel.png"];
+                [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+                fprintf(stdout, "Snapshot: %s\n", path.UTF8String); fflush(stdout);
+            }
+            exit(passed ? 0 : 9);
         }];
     }];
 }

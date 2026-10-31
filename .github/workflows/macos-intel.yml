@@ -31,7 +31,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import subprocess
-          for mode in ["--self-test", "--selection-test"]:
+          for mode in ["--self-test", "--selection-test", "--ai-test"]:
               subprocess.run(
                   ["build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader", mode],
                   timeout=60,
