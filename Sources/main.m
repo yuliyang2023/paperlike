@@ -20,6 +20,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 @property NSTextField *layoutValue;
 @property NSString *layoutKind;
 @property BOOL selfTest;
+@property BOOL selectionTest;
+@property BOOL selectionNarrowTest;
 @property BOOL smokeTest;
 @property BOOL readerTest;
 @property BOOL layoutTest;
@@ -98,7 +100,8 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
-    self.selfTest = [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    self.selectionTest = [NSProcessInfo.processInfo.arguments containsObject:@"--selection-test"];
+    self.selfTest = self.selectionTest || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     self.layoutTest = [NSProcessInfo.processInfo.arguments containsObject:@"--layout-test"];
     self.readerTest = self.layoutTest || [NSProcessInfo.processInfo.arguments containsObject:@"--reader-test"];
     self.smokeTest = self.readerTest || [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"];
@@ -209,7 +212,12 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     ]];
     [self updateControls];
     if (self.selfTest) {
+        if (self.selectionTest) {
+            [self.window makeKeyAndOrderFront:nil];
+            [NSApp activateIgnoringOtherApps:YES];
+        }
         NSString *fixture = @"<!doctype html><html><head><meta charset='utf-8'></head><body><h1>墨读 · 显示测试</h1><p>Paperlike 2200 × 1650</p><div style='height:3000px'>阅读测试正文</div></body></html>";
+        if (self.selectionTest) fixture = [NSString stringWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"selection-test" withExtension:@"html"] encoding:NSUTF8StringEncoding error:nil];
         [self.webView loadHTMLString:fixture baseURL:[NSURL URLWithString:@"https://weread.qq.com/web/reader/test"]];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ fprintf(stderr, "SELFTEST timeout\n"); exit(2); });
     } else {
@@ -460,6 +468,7 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
     NSString *layoutJS = [NSString stringWithFormat:@"window.PaperlikeReader?.setLayout(%g, %g)", self.pageMargin, self.lineSpacing];
     [webView evaluateJavaScript:layoutJS completionHandler:nil];
     [webView evaluateJavaScript:@"window.PaperlikeReader?.reportState()" completionHandler:nil];
+    if (self.selectionTest) { [self checkSelectionTest:0]; return; }
     if (self.selfTest) [self runSelfTest];
     if (self.readerTest) { [self checkReaderTest:0 advanced:NO]; return; }
     if (self.smokeTest) {
@@ -563,6 +572,42 @@ static NSString * const HomeURL = @"https://weread.qq.com/";
         if (error) fprintf(stderr, "%s\n", error.description.UTF8String);
         fflush(stdout);
         exit(passed ? 0 : 4);
+    }];
+}
+- (void)checkSelectionTest:(NSUInteger)attempt {
+    if (attempt == 0) fprintf(stdout, "Selection test: narrow=%d window=%.0fx%.0f web=%.0fx%.0f zoom=%.1f\n", self.selectionNarrowTest, self.window.contentView.bounds.size.width, self.window.contentView.bounds.size.height, self.webView.bounds.size.width, self.webView.bounds.size.height, self.webView.pageZoom);
+    NSString *js = @"(() => {const menu=document.querySelector('.reader_toolbar_container');if(!menu)return {passed:false};const rect=menu.getBoundingClientRect(),style=getComputedStyle(menu);const buttons=[...menu.querySelectorAll('.toolbarItem')].map(button=>{const r=button.getBoundingClientRect();const text=getComputedStyle(button.querySelector('.toolbarItem_text'));return {height:r.height,width:r.width,font:parseFloat(text.fontSize),color:text.color,hit:button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};});const inBounds=rect.left>=15&&rect.top>=15&&rect.right<=innerWidth-15&&rect.bottom<=innerHeight-15;const white=style.backgroundColor==='rgb(255, 255, 255)';const border=parseFloat(style.borderTopWidth)>=2&&style.borderTopColor==='rgb(0, 0, 0)';return {passed:inBounds&&white&&border&&buttons.length===6&&buttons.every(b=>b.height>=80&&b.width>=88&&b.font>=20&&b.color==='rgb(0, 0, 0)'&&b.hit),inBounds,white,border,buttons,viewport:[innerWidth,innerHeight],rect:rect.toJSON(),translation:style.translate};})()";
+    [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        NSDictionary *r = [result isKindOfClass:NSDictionary.class] ? result : @{};
+        BOOL passed = !error && [r[@"passed"] boolValue];
+        if (!passed && attempt < 15) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkSelectionTest:attempt + 1]; });
+            return;
+        }
+        if (passed && !self.selectionNarrowTest) {
+            self.selectionNarrowTest = YES;
+            [self.window setContentSize:NSMakeSize(820, 650)];
+            [self.webView setPageZoom:1.5];
+            [self.window.contentView layoutSubtreeIfNeeded];
+            [self.window displayIfNeeded];
+            [self.webView takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
+                (void)image; (void)snapshotError;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkSelectionTest:0]; });
+            }];
+            return;
+        }
+        fprintf(stdout, "SELECTION %s\n%s\n", passed ? "PASS" : "FAIL", r.description.UTF8String); fflush(stdout);
+        WKSnapshotConfiguration *snapshot = [[WKSnapshotConfiguration alloc] init];
+        snapshot.snapshotWidth = @1100;
+        [self.webView takeSnapshotWithConfiguration:snapshot completionHandler:^(NSImage *image, NSError *snapshotError) {
+            if (image && !snapshotError) {
+                NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+                NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"paperlike-selection-toolbar.png"];
+                [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+                fprintf(stdout, "Snapshot: %s\n", path.UTF8String); fflush(stdout);
+            }
+            exit(passed ? 0 : 8);
+        }];
     }];
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { (void)sender; return YES; }

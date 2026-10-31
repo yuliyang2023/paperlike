@@ -125,8 +125,93 @@
     .readerCatalog_list_item_title_text { white-space: normal !important; overflow-wrap: anywhere; }
     :is(.reader_float_panel_header_closeBtn, .reader_float_panel_header_backBtn,
         .wr_reader_note_panel_footer_button) { min-width: 48px !important; min-height: 48px !important; }
+    html body :is(.reader_toolbar_container, .reader_float_mini_tooltip_wrapper) {
+      box-sizing: border-box !important; width: max-content !important;
+      max-width: calc(100vw - 32px) !important;
+      max-height: calc(100vh - 32px) !important;
+      overflow: auto !important; border: 2px solid black !important;
+      border-radius: 10px !important; padding: 10px !important;
+      background: white !important; color: black !important;
+      opacity: 1 !important; box-shadow: none !important;
+      z-index: 350 !important;
+    }
+    html body .reader_toolbar_content { width: auto !important; background: white !important; color: black !important; }
+    html body .reader_toolbar_itemContainer {
+      display: grid !important; grid-template-columns: repeat(6, minmax(88px, 1fr)) !important;
+      width: auto !important; gap: 8px !important;
+    }
+    html body .reader_toolbar_container .toolbarItem {
+      display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important;
+      box-sizing: border-box !important; width: auto !important; min-width: 88px !important;
+      min-height: 80px !important; height: auto !important; margin: 0 !important;
+      padding: 10px 8px !important; border: 1.5px solid black !important;
+      border-radius: 6px !important; background: white !important; color: black !important;
+    }
+    html body .reader_toolbar_container .toolbarItem_text {
+      font-size: 20px !important; font-weight: 600 !important; line-height: 1.5 !important;
+      white-space: nowrap !important; color: black !important; opacity: 1 !important;
+    }
+    html body .reader_toolbar_container .toolbarItem_icon {
+      flex-shrink: 0 !important; filter: grayscale(1) brightness(0) !important; transform: scale(1.2) !important;
+      margin-bottom: 8px !important; opacity: 1 !important;
+    }
+    html body .reader_toolbar_container .toolbarItem:hover,
+    html body .reader_toolbar_container .toolbarItem:active { background: #dedede !important; }
+    html body .reader_toolbar_container .toolbarItem:focus-visible { outline: 3px solid black !important; outline-offset: 1px !important; }
+    html body .reader_toolbar_container > .arrow { display: none !important; }
+    html body :is(.reader_toolbar_color_container, .reader_float_mini_tooltip_color_wrapper,
+        .reader_float_mini_tooltip_style_wrapper) {
+      display: flex !important; flex-wrap: wrap !important; gap: 12px !important; height: auto !important;
+      padding: 10px !important; background: white !important; color: black !important;
+    }
+    html body :is(.reader_toolbar_color_item, .reader_float_mini_tooltip_color_item,
+        .reader_float_mini_tooltip_style_item) {
+      box-sizing: border-box !important; min-width: 48px !important; min-height: 48px !important;
+      width: 48px !important; height: 48px !important; flex-shrink: 0 !important;
+      border: 2px solid black !important; border-radius: 6px !important;
+    }
+    html body .reader_toolbar_color_item_selected { filter: grayscale(1) brightness(0) !important; }
+    html body .reader_float_mini_tooltip_wrapper :is(button, [role="button"]) { min-height: 48px !important; min-width: 48px !important; }
+    html body .reader_float_mini_tooltip_wrapper :where(span, p, button) { font-size: 20px !important; line-height: 1.5 !important; color: black !important; }
+    html[data-paperlike-ink="true"] .wr_selection {
+      background: rgba(0,0,0,0.16) !important; outline: 1px solid black !important;
+    }
+    @media (max-width: 700px) {
+      html body .reader_toolbar_itemContainer { grid-template-columns: repeat(3, minmax(88px, 1fr)) !important; }
+    }
   `;
   (document.head || document.documentElement).appendChild(controlsStyle);
+  const fitSelectionPopups = () => {
+    for (const popup of document.querySelectorAll('.reader_toolbar_container, .reader_float_mini_tooltip_wrapper')) {
+      if (!popup.getClientRects().length || getComputedStyle(popup).visibility === 'hidden') continue;
+      const rect = popup.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      // Read the currently applied offset, since the website can replace the
+      // entire inline style attribute when it repositions a selection menu.
+      const offsets = popup.style.getPropertyValue('translate').trim().split(/\s+/);
+      const previous = {x: parseFloat(offsets[0]) || 0, y: parseFloat(offsets[1]) || 0};
+      const x = rect.x - previous.x;
+      const y = rect.y - previous.y;
+      const desiredX = Math.min(Math.max(16, x), Math.max(16, innerWidth - rect.width - 16));
+      const desiredY = Math.min(Math.max(16, y), Math.max(16, innerHeight - rect.height - 16));
+      const next = {x: Math.round(desiredX - x), y: Math.round(desiredY - y)};
+      if (next.x !== previous.x || next.y !== previous.y) {
+        popup.style.setProperty('translate', `${next.x}px ${next.y}px`, 'important');
+      }
+    }
+  };
+  let popupFrame = null;
+  const schedulePopupFit = () => {
+    if (popupFrame !== null) return;
+    popupFrame = requestAnimationFrame(() => { popupFrame = null; fitSelectionPopups(); });
+  };
+  window.addEventListener('resize', () => {
+    schedulePopupFit();
+    // WKWebView can finish its zoom/viewport layout after the resize callback.
+    setTimeout(fitSelectionPopups, 100);
+    setTimeout(fitSelectionPopups, 350);
+  });
+  window.addEventListener('scroll', schedulePopupFit, {passive: true});
   const layoutStyle = document.createElement('style');
   layoutStyle.id = 'paperlike-layout-style';
   (document.head || document.documentElement).appendChild(layoutStyle);
@@ -297,7 +382,7 @@
   };
   const controlsObserver = new MutationObserver(() => {
     if (fontSizeTimer !== null) return;
-    fontSizeTimer = setTimeout(() => { fontSizeTimer = null; syncFontSize(); syncLayout(); reportReaderState(); }, 50);
+    fontSizeTimer = setTimeout(() => { fontSizeTimer = null; syncFontSize(); syncLayout(); fitSelectionPopups(); reportReaderState(); }, 50);
   });
   controlsObserver.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style']});
   syncFontSize();
@@ -343,6 +428,7 @@
         ensureLightTheme();
       }
       reportReaderState(true);
+      schedulePopupFit();
     },
     turn(direction) {
       const active = document.activeElement;

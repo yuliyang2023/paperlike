@@ -31,11 +31,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import subprocess
-          subprocess.run(
-              ["build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader", "--self-test"],
-              timeout=60,
-              check=True,
-          )
+          for mode in ["--self-test", "--selection-test"]:
+              subprocess.run(
+                  ["build/墨读 Paperlike.app/Contents/MacOS/PaperlikeReader", mode],
+                  timeout=60,
+                  check=True,
+              )
           PY
 
       - name: Package application
